@@ -90,6 +90,8 @@ protected:
 
 	std::vector<FToken> Tokens;
 
+	std::vector<int> CodeDeepth;
+
 	std::vector<Error> Errors;
 
 	std::shared_ptr<SyntaxNode> SyntaxTree;
@@ -114,8 +116,8 @@ private:
 	//---------------------------------------------------------
 	//----------------SyntaxAnalisis---------------------------
 	//---------------------------------------------------------
-	void ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node, int& reset);
-	void ProcessKeyWord(int& x, std::shared_ptr<SyntaxNode>& Node, int& reset);
+	void ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node);
+	void ProcessKeyWord(int& x, std::shared_ptr<SyntaxNode>& Node);
 
 private:
 

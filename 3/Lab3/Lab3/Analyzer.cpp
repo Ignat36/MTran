@@ -100,7 +100,7 @@ int PyAnalyzer::Analyze()
 int PyAnalyzer::LexicalAnalisis()
 {
     std::string Token = "";
-
+    CodeDeepth.resize(Code.size());
     for (int i = 0; i < Code.size(); i++)
     {
         bool OnlySpaces = true;
@@ -113,7 +113,14 @@ int PyAnalyzer::LexicalAnalisis()
             if (MakeFalse) OnlySpaces = false;
 
             char c = Code[i][j];
-            if (c == ' ' || c == '\t') continue;
+            if (c == ' ' || c == '\t')
+            {
+                if (!MakeFalse)
+                {
+                    CodeDeepth[i] += c == ' ' ? 1 : 4;
+                }
+                continue;
+            }
             MakeFalse = true;
 
             if (Delimiters.count(c))
@@ -230,6 +237,16 @@ int PyAnalyzer::LexicalAnalisis()
             }
         }
     }
+
+    for (int i = 0; i < CodeDeepth.size(); i++)
+    {
+        if (CodeDeepth[i] % 4)
+        {
+            Errors.push_back(Error("Incorrect code deepth on row " + std::to_string(i + 1)));
+        }
+        CodeDeepth[i] /= 4;
+    }
+
     return 0;
 }
 
@@ -238,42 +255,74 @@ int PyAnalyzer::SyntaxAnalisis()
     SyntaxTree = std::make_shared<SyntaxNode>(FToken("", "", 0, 0));
     SyntaxTree->Parent = SyntaxTree;
     std::shared_ptr<SyntaxNode> current = SyntaxTree;;
-    int reset = 0;
+    int deepth = 0;
     
     for (int i = 0; i < Tokens.size(); i++) {
 
         if (i && Tokens[i - 1].RowIndex != Tokens[i].RowIndex)
         {
-            while (reset > 0) 
+            while (current->Token.ValueName != "")
             {
                 current = current->Parent.lock();
-                reset--;
+            }
+
+            int diff = CodeDeepth[Tokens[i - 1].RowIndex] - CodeDeepth[Tokens[i].RowIndex];
+            if (diff < -1)
+            {
+                Errors.push_back(Error("incorrect code deepth change at line " + std::to_string(i)));
+            }
+
+            if (diff == -1 && Tokens[i-1].ValueName != ":")
+            {
+                Errors.push_back(Error("Unexpected indent at line " + std::to_string(i)));
+            }
+
+            while (diff > 0)
+            {
+                current = current->Parent.lock();
+                diff--;
+                deepth--;
+            }
+
+            diff = deepth;
+            while (diff > 0)
+            {
+                current = current->Children.back();
+                diff--;
             }
         }
-
-        if (Tokens[i].ValueName == "(") {
+        if (Tokens[i].ValueName == ":") {
+            /*std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
+            current->Children.push_back(child);*/
+            deepth++;
+            //current = current->Children.back();
+        }
+        else if (Tokens[i].ValueName == "(") {
             // Create a new node and add it as a child of the current node
-            std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
-            current->Children.push_back(child);
-            reset++;
+            /*std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
+            current->Children.push_back(child);*/
             // Set the current node to be the new child
             current = current->Children.back();
         }
         else if (Tokens[i].ValueName == ")") {
             // Move back up to the parent node
             current = current->Parent.lock();
-            reset--;
 
-            std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
-            current->Children.push_back(child);
+            /*std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
+            current->Children.push_back(child);*/
         } 
         else if (Tokens[i].TokenType == ETokenType::Operator)
         {
-            ProcessExpression(i, current, reset);
+            ProcessExpression(i, current);
         }
         else if (Tokens[i].TokenType == ETokenType::KeyWord)
         {
-            ProcessKeyWord(i, current, reset);
+            ProcessKeyWord(i, current);
+        }
+        else if (Tokens[i].ValueName == ",")
+        {
+            // Check for smthing enumeration
+            continue;
         }
         else {
             // Create a new node for the variable and add it as a child of the current node
@@ -507,17 +556,17 @@ void PyAnalyzer::ReadForSignature(int& x, int& y, bool& Flag)
     }
 }
 
-void PyAnalyzer::ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node, int& reset)
+void PyAnalyzer::ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node)
 {
 
     if (AssigmentOperators.count(Tokens[x].ValueName))
     {
         if (x - 1 >= 0 && Tokens[x - 1].TokenType == ETokenType::Variable)
         {
-            Node = Node->Children.back(); reset++;
+            Node = Node->Children.back();
             std::shared_ptr<SyntaxNode> Child = std::make_shared<SyntaxNode>(Tokens[x], Node);
             Node->Children.push_back(Child);
-            Node = Child; reset++;
+            Node = Child;
         }
         else
         {
@@ -538,16 +587,14 @@ void PyAnalyzer::ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node, in
         std::shared_ptr<SyntaxNode> Child = std::make_shared<SyntaxNode>(Tokens[x], Node);
         Node->Children.push_back(Child);
         Node = Child;
-        reset++;
     }
 }
 
-void PyAnalyzer::ProcessKeyWord(int& x, std::shared_ptr<SyntaxNode>& Node, int& reset)
+void PyAnalyzer::ProcessKeyWord(int& x, std::shared_ptr<SyntaxNode>& Node)
 {
     std::shared_ptr<SyntaxNode> Child = std::make_shared<SyntaxNode>(Tokens[x], Node);
     Node->Children.push_back(Child);
     Node = Child;
-    reset++;
     return;
 }
 
