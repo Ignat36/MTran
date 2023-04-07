@@ -665,16 +665,33 @@ void PyAnalyzer::checkSingleTokenDependensies()
             }
             break;
         case ETokenType::KeyWord:
-            // process in syntax tree
+
+            /*int j;
+            for (j = i + 1; j < Tokens.size(); j++)
+            {
+
+            }
+
+
+            if (Tokens[i + 1].ValueName != "(" &&
+                (Tokens[i + 1].TokenType == ETokenType::KeyWord
+                    || Tokens[i + 1].TokenType == ETokenType::Operator
+                    || Tokens[i + 1].TokenType == ETokenType::Delimeter)
+                )
+            {
+                Errors.push_back(Error("Unexpected token : " + Tokens[i + 1].ValueName + " | at " + std::to_string(Tokens[i + 1].RowIndex) + ":" + std::to_string(Tokens[i + 1].ColumnIndex)));
+            }*/
             break;
+
         case ETokenType::Operator:
             if (Tokens[i].RowIndex != Tokens[i + 1].RowIndex)
             {
                 Errors.push_back(Error("Unexpected operator in the end of line : " + Tokens[i].ValueName + " | at " + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
             }
-            if (Tokens[i + 1].TokenType == ETokenType::KeyWord
+            if (Tokens[i + 1].ValueName != "(" &&
+                 (Tokens[i + 1].TokenType == ETokenType::KeyWord
                 || Tokens[i + 1].TokenType == ETokenType::Operator
-                || Tokens[i + 1].TokenType == ETokenType::Delimeter
+                || Tokens[i + 1].TokenType == ETokenType::Delimeter)
                 )
             {
                 Errors.push_back(Error("Unexpected token : " + Tokens[i + 1].ValueName + " | at " + std::to_string(Tokens[i + 1].RowIndex) + ":" + std::to_string(Tokens[i + 1].ColumnIndex)));
@@ -694,7 +711,6 @@ void PyAnalyzer::checkSingleTokenDependensies()
             }
             break;
         default:
-            exit(3);
             break;
         }
     }
