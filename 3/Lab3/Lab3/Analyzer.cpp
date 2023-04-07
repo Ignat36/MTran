@@ -92,7 +92,11 @@ void PyAnalyzer::PrintTablesForLab()
 int PyAnalyzer::Analyze()
 {
     LexicalAnalisis();
-    SyntaxAnalisis();
+    checkSingleTokenDependensies();
+    checkBrackets();
+    SyntaxAnalisis(); 
+    ReformatSyntaxTree();
+    checkSyntaxTree();
     SemanticAnalisis();
     return true;
 }
@@ -153,6 +157,12 @@ int PyAnalyzer::LexicalAnalisis()
             if (ReturnFlag) continue;
 
 
+            if (Operators.count(Token))
+            {
+                OperatorsTable.Rows.push_back(FToken(Token, "operator", i, j));
+                Tokens.push_back(FToken(Token, "operator", i, j, ETokenType::Operator));
+                continue;
+            }
             if (Keywords.count(Token))
             {
                 KeywordsTable.Rows.push_back(FToken(Token, "key word", i, j));
@@ -182,18 +192,6 @@ int PyAnalyzer::LexicalAnalisis()
             {
                 FunctionsTable.Rows.push_back(FToken(Token, "build-in function", i, j));
                 Tokens.push_back(FToken(Token, "build-in function", i, j, ETokenType::Function));
-                continue;
-            }
-            if (BuiltinTypes.count(Token))
-            {
-                KeywordsTable.Rows.push_back(FToken(Token, "build-in type", i, j));
-                Tokens.push_back(FToken(Token, "build-in type", i, j, ETokenType::Type));
-                continue;
-            }
-            if (Operators.count(Token))
-            {
-                OperatorsTable.Rows.push_back(FToken(Token, "operator", i, j));
-                Tokens.push_back(FToken(Token, "operator", i, j, ETokenType::Operator));
                 continue;
             }
             if (Variables.count(Token))
@@ -584,6 +582,7 @@ void PyAnalyzer::ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node)
     }
     else
     {
+        Node = Node->Children.back();
         std::shared_ptr<SyntaxNode> Child = std::make_shared<SyntaxNode>(Tokens[x], Node);
         Node->Children.push_back(Child);
         Node = Child;
@@ -596,6 +595,160 @@ void PyAnalyzer::ProcessKeyWord(int& x, std::shared_ptr<SyntaxNode>& Node)
     Node->Children.push_back(Child);
     Node = Child;
     return;
+}
+
+void PyAnalyzer::ReformatSyntaxTree()
+{
+    for (int i = 0; i < SyntaxTree->Children.size(); i++)
+    {
+        ReformatSyntaxNode(SyntaxTree->Children[i], SyntaxTree, i);
+    }
+}
+
+void PyAnalyzer::ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index)
+{
+    if (Node->Token.TokenType == ETokenType::Variable || Node->Token.TokenType == ETokenType::Literal || Node->Token.TokenType == ETokenType::Number)
+    {
+        if (Node->Children.size())
+        {
+            Parent->Children[p_child_index] = Node->Children.back();
+            Node->Children.back()->Parent = Parent;
+            Node->Parent = Node->Children.back();
+            Node->Children.back()->Children.insert(Node->Children.back()->Children.begin(), Node);
+            Node->Children.clear();
+            Node = Parent->Children[p_child_index];
+        }
+    }
+
+    for (int i = 0; i < Node->Children.size(); i++)
+    {
+        ReformatSyntaxNode(Node->Children[i], Node, i);
+    }
+}
+
+void PyAnalyzer::checkSingleTokenDependensies()
+{
+    for (int i = 0; i < Tokens.size() - 1; i++)
+    {
+        switch (Tokens[i].TokenType)
+        {
+        case ETokenType::Literal:
+            if (Tokens[i].RowIndex == Tokens[i+1].RowIndex &&
+                ( Tokens[i + 1].TokenType == ETokenType::Literal 
+                || Tokens[i + 1].TokenType == ETokenType::Number
+                || Tokens[i + 1].TokenType == ETokenType::Variable
+                || Tokens[i + 1].TokenType == ETokenType::Function
+                || Tokens[i + 1].TokenType == ETokenType::Variable
+                || !GoodTokensAfterLiteral.count(Tokens[i+1].ValueName))
+                )
+            {
+                Errors.push_back(Error("Unexpected token : " + Tokens[i + 1].ValueName + " | at " + std::to_string(Tokens[i + 1].RowIndex) + ":" + std::to_string(Tokens[i + 1].ColumnIndex)));
+            }
+            break;
+        case ETokenType::Number:
+            if (Tokens[i].RowIndex == Tokens[i + 1].RowIndex &&
+                (Tokens[i + 1].TokenType == ETokenType::Literal
+                    || Tokens[i + 1].TokenType == ETokenType::Number
+                    || Tokens[i + 1].TokenType == ETokenType::Variable
+                    || Tokens[i + 1].TokenType == ETokenType::Function
+                    || Tokens[i + 1].TokenType == ETokenType::Variable
+                    || !GoodTokensAfterNumber.count(Tokens[i + 1].ValueName))
+                )
+            {
+                Errors.push_back(Error("Unexpected token : " + Tokens[i + 1].ValueName + " | at " + std::to_string(Tokens[i + 1].RowIndex) + ":" + std::to_string(Tokens[i + 1].ColumnIndex)));
+            }
+            break;
+        case ETokenType::Function:
+            if (Tokens[i + 1].ValueName != "(")
+            {
+                Errors.push_back(Error("Expected '(' symbol, but found : " + Tokens[i + 1].ValueName + " | at " + std::to_string(Tokens[i + 1].RowIndex) + ":" + std::to_string(Tokens[i + 1].ColumnIndex)));
+            }
+            break;
+        case ETokenType::KeyWord:
+            // process in syntax tree
+            break;
+        case ETokenType::Operator:
+            if (Tokens[i].RowIndex != Tokens[i + 1].RowIndex)
+            {
+                Errors.push_back(Error("Unexpected operator in the end of line : " + Tokens[i].ValueName + " | at " + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+            }
+            if (Tokens[i + 1].TokenType == ETokenType::KeyWord
+                || Tokens[i + 1].TokenType == ETokenType::Operator
+                || Tokens[i + 1].TokenType == ETokenType::Delimeter
+                )
+            {
+                Errors.push_back(Error("Unexpected token : " + Tokens[i + 1].ValueName + " | at " + std::to_string(Tokens[i + 1].RowIndex) + ":" + std::to_string(Tokens[i + 1].ColumnIndex)));
+            }
+            break;
+        case ETokenType::Variable:
+            if (Tokens[i].RowIndex == Tokens[i + 1].RowIndex &&
+                (Tokens[i + 1].TokenType == ETokenType::Literal
+                    || Tokens[i + 1].TokenType == ETokenType::Number
+                    || Tokens[i + 1].TokenType == ETokenType::Variable
+                    || Tokens[i + 1].TokenType == ETokenType::Function
+                    || Tokens[i + 1].TokenType == ETokenType::Variable
+                    || !GoodTokensAfterVariable.count(Tokens[i + 1].ValueName))
+                )
+            {
+                Errors.push_back(Error("Unexpected token : " + Tokens[i + 1].ValueName + " | at " + std::to_string(Tokens[i + 1].RowIndex) + ":" + std::to_string(Tokens[i + 1].ColumnIndex)));
+            }
+            break;
+        default:
+            exit(3);
+            break;
+        }
+    }
+
+    if (Tokens.back().TokenType == ETokenType::Operator
+        || Tokens.back().TokenType == ETokenType::Function)
+    {
+        Errors.push_back(Error("Unexpected token : " + Tokens.back().ValueName + " | at " + std::to_string(Tokens.back().RowIndex) + ":" + std::to_string(Tokens.back().ColumnIndex)));
+    }
+}
+
+void PyAnalyzer::checkBrackets()
+{
+    std::vector<FToken> stack;
+
+    for (auto i : Tokens)
+    {
+        if ( Brackets.count(i.ValueName))
+        {
+            if (i.ValueName == "{" || i.ValueName == "[" || i.ValueName == "(")
+            {
+                stack.push_back(i);
+            }
+            else
+            {
+                if (stack.empty())
+                {
+                    Errors.push_back(Error("Incorrect bracket sequence : bracket wath never opend : at | " + std::to_string(i.RowIndex) + ":" + std::to_string(i.ColumnIndex)));
+                    break;
+                }
+                else if (i.ValueName == "}" && stack.back().ValueName == "{")
+                {
+                    stack.pop_back();
+                }
+                else if (i.ValueName == ")" && stack.back().ValueName == "(")
+                {
+                    stack.pop_back();
+                }
+                else if (i.ValueName == "]" && stack.back().ValueName == "[")
+                {
+                    stack.pop_back();
+                }
+                else
+                {
+                    Errors.push_back(Error("Incorrect bracket sequence : brackets are unmatched : at | " + std::to_string(i.RowIndex) + ":" + std::to_string(i.ColumnIndex)));
+                    break;
+                }
+            }
+        }
+    }
+}
+
+void PyAnalyzer::checkSyntaxTree()
+{
 }
 
 void PyAnalyzer::SyntaxNode::Print(int Depth)

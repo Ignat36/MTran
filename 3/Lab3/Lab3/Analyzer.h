@@ -9,7 +9,7 @@
 class PyAnalyzer
 {
 
-private:
+public:
 
 	enum class ETokenType
 	{
@@ -119,6 +119,13 @@ private:
 	void ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node);
 	void ProcessKeyWord(int& x, std::shared_ptr<SyntaxNode>& Node);
 
+	void ReformatSyntaxTree();
+	void ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index);
+
+	void checkSingleTokenDependensies();
+	void checkBrackets();
+	void checkSyntaxTree();
+
 private:
 
 	std::unordered_set<std::string> Variables;
@@ -135,9 +142,9 @@ private:
 	};
 
 	const std::unordered_set<std::string> Keywords = {
-		"and", "as", "assert", "break", "class", "continue", "def", "del", "elif",
+		"as", "assert", "break", "class", "continue", "def", "del", "elif",
 		"else", "except", "False", "finally", "for", "from", "global", "if", "import",
-		"in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise",
+		"lambda", "None", "nonlocal", "pass", "raise",
 		"return", "True", "try", "while", "with", "yield"
 	};
 
@@ -157,7 +164,22 @@ private:
 		"list", "set", "str", "tuple"
 	};
 
+	const std::unordered_set<std::string> GoodTokensAfterLiteral = {
+		"]", ",", ")", "}", ":", "+", "*", "==", "!=", "<", "<=", ">", ">=", "is", "not", "and", "or"
+	};
+
+	const std::unordered_set<std::string> GoodTokensAfterNumber = {
+		"]", ",", ")", "}", ":", "+", "-", "*", "/", "//", "%", "**", "==", "!=", "<", "<=", ">", ">=", "is", "not", "and", "or"
+	};
+
+	const std::unordered_set<std::string> GoodTokensAfterVariable = {
+		"]", ",", ")", "}", ":", "+", "-", "*", "/", "//", "%", "**", "==", "!=", "<", "<=", ">", ">=", "is", "not", "and", "or",
+		"&", "|", "^", "<<", ">>", "~", "=", "+=", "-=", "*=", "/=", "//=", "%=", "**=", "&=", "|=", "^=", "<<=", ">>="
+	};
+
 	const std::unordered_set<char> Delimiters = { '[', ']', '(', ')', '{', '}', ' ', ':', ',', '\t' };
+
+	const std::unordered_set<std::string> Brackets = { "[", "]", "(", ")", "{", "}"};
 
 	std::unordered_set<char> AllowedEscapeChars = { '\\', '\'', '\"', 'n', 'r', 't', 'b', 'f', 'o', 'x' };
 
@@ -166,7 +188,7 @@ private:
 	const std::unordered_set<std::string> Operators = {
 	"+", "-", "*", "/", "//", "%", "**",  // Arithmetic Operators
 	"==", "!=", "<", "<=", ">", ">=",     // Comparison Operators
-	"and", "or", "not",                   // Logical Operators
+	"and", "or", "not", "in", "is"        // Logical Operators
 	"&", "|", "^", "<<", ">>", "~",       // Bitwise Operators
 	"=", "+=", "-=", "*=", "/=",          // Assignment Operators
 	"//=", "%=", "**=", "&=", "|=", "^=", // Assignment Operators
