@@ -630,6 +630,23 @@ void PyAnalyzer::checkSingleTokenDependensies()
 {
     for (int i = 0; i < Tokens.size() - 1; i++)
     {
+
+        if (Tokens[i + 1].RowIndex != Tokens[i].RowIndex)
+        {
+            if (Tokens[i + 1].TokenType == ETokenType::Operator)
+            {
+                Errors.push_back(Error(" found operator in the beginning of file : " + Tokens[i+1].ValueName + std::string(" | at ") + std::to_string(Tokens[i+1].RowIndex) + ":" + std::to_string(Tokens[i+1].ColumnIndex)));
+            }
+        }
+
+        if (Tokens[i].ValueName == ":")
+        {
+            if (Tokens[i + 1].RowIndex == Tokens[i].RowIndex)
+            {
+                Errors.push_back(Error(" colon ':' must be followed by new string with additional tab, but found : " + Tokens[i].ValueName + std::string(" | at ") + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+            }
+        }
+
         switch (Tokens[i].TokenType)
         {
         case ETokenType::Literal:
@@ -666,21 +683,29 @@ void PyAnalyzer::checkSingleTokenDependensies()
             break;
         case ETokenType::KeyWord:
 
-            /*int j;
-            for (j = i + 1; j < Tokens.size(); j++)
+            if (Tokens[i].ValueName == "for" || Tokens[i].ValueName == "while" || Tokens[i].ValueName == "if" || Tokens[i].ValueName == "elif")
             {
-
+                int j;
+                for (j = i + 1; j < Tokens.size(); j++)
+                {
+                    if (Tokens[j].ValueName == ":")
+                        break;
+                }
+                if (j == Tokens.size() || Tokens[i].RowIndex != Tokens[j].RowIndex)
+                {
+                    Errors.push_back(Error(" 'if' line must end with colon ':' " + std::string(" | at ") + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+                }
+                break;
             }
 
-
-            if (Tokens[i + 1].ValueName != "(" &&
-                (Tokens[i + 1].TokenType == ETokenType::KeyWord
-                    || Tokens[i + 1].TokenType == ETokenType::Operator
-                    || Tokens[i + 1].TokenType == ETokenType::Delimeter)
-                )
+            if (Tokens[i].ValueName == "continue" || Tokens[i].ValueName == "break")
             {
-                Errors.push_back(Error("Unexpected token : " + Tokens[i + 1].ValueName + " | at " + std::to_string(Tokens[i + 1].RowIndex) + ":" + std::to_string(Tokens[i + 1].ColumnIndex)));
-            }*/
+                if (Tokens[i + 1].RowIndex == Tokens[i].RowIndex)
+                {
+                    Errors.push_back(Error(" colon ':' must be followed by new string with additional tab, but found : " + Tokens[i].ValueName + std::string(" | at ") + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+                }
+            }
+
             break;
 
         case ETokenType::Operator:
