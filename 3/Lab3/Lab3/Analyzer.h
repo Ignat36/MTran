@@ -126,6 +126,8 @@ private:
 	void checkBrackets();
 	void checkSyntaxTree();
 
+	std::shared_ptr<SyntaxNode> BuildExpressionTree(std::shared_ptr<SyntaxNode> Node);
+
 private:
 
 	std::unordered_set<std::string> Variables;
@@ -202,6 +204,17 @@ private:
 	};
 
 	std::unordered_map<std::string, int> OperatorPrecedence{
+		{"=",0},
+		{"+=",0},
+		{"-=",0},
+		{"*=",0},
+		{"/=",0},
+		{"//=",0},
+		{"%=",0},
+		{"**=",0},
+		{"&=",0},
+		{"|=",0},
+		{"^=",0},
 		{"or", 1},
 		{"and", 2},
 		{"not", 3},

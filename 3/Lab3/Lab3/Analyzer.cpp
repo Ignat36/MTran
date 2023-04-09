@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <stack>
 
 PyAnalyzer::PyAnalyzer(std::vector<std::string>& _Code) : Code(_Code)
 {
@@ -254,6 +255,7 @@ int PyAnalyzer::SyntaxAnalisis()
     SyntaxTree->Parent = SyntaxTree;
     std::shared_ptr<SyntaxNode> current = SyntaxTree;;
     int deepth = 0;
+    std::vector<int> brackets;
     
     for (int i = 0; i < Tokens.size(); i++) {
 
@@ -296,18 +298,37 @@ int PyAnalyzer::SyntaxAnalisis()
             //current = current->Children.back();
         }
         else if (Tokens[i].ValueName == "(") {
-            // Create a new node and add it as a child of the current node
-            /*std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
-            current->Children.push_back(child);*/
-            // Set the current node to be the new child
-            current = current->Children.back();
+            
+            brackets.push_back(i);
+
+            if (i > 0 && Tokens[i - 1].TokenType == ETokenType::Function)
+            {
+                current = current->Children.back();
+            }
+            else
+            {
+                std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
+                current->Children.push_back(child);
+                current = current->Children.back();
+            }
+            
         }
         else if (Tokens[i].ValueName == ")") {
             // Move back up to the parent node
-            current = current->Parent.lock();
 
-            /*std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
-            current->Children.push_back(child);*/
+            if (brackets.back() > 0 && Tokens[brackets.back() - 1].TokenType == ETokenType::Function)
+            {
+                current = current->Parent.lock();
+            }
+            else
+            {
+                if (current->Children.size()) current = current->Children.back();
+                std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
+                current->Children.push_back(child);
+                current = current->Children.back();
+            }
+
+            brackets.pop_back();
         } 
         else if (Tokens[i].TokenType == ETokenType::Operator)
         {
@@ -582,7 +603,7 @@ void PyAnalyzer::ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node)
     }
     else
     {
-        Node = Node->Children.back();
+        if (Node->Children.size()) Node = Node->Children.back();
         std::shared_ptr<SyntaxNode> Child = std::make_shared<SyntaxNode>(Tokens[x], Node);
         Node->Children.push_back(Child);
         Node = Child;
@@ -607,15 +628,14 @@ void PyAnalyzer::ReformatSyntaxTree()
 
 void PyAnalyzer::ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index)
 {
-    if (Node->Token.TokenType == ETokenType::Variable || Node->Token.TokenType == ETokenType::Literal || Node->Token.TokenType == ETokenType::Number)
+    if (Node->Token.TokenType == ETokenType::Variable 
+        || Node->Token.TokenType == ETokenType::Literal 
+        || Node->Token.TokenType == ETokenType::Number
+        || Node->Token.TokenType == ETokenType::Function)
     {
-        if (Node->Children.size())
+        if (Node->Children.size() && Node->Children.back()->Token.TokenType == ETokenType::Operator)
         {
-            Parent->Children[p_child_index] = Node->Children.back();
-            Node->Children.back()->Parent = Parent;
-            Node->Parent = Node->Children.back();
-            Node->Children.back()->Children.insert(Node->Children.back()->Children.begin(), Node);
-            Node->Children.clear();
+            Parent->Children[p_child_index] = BuildExpressionTree(Node);
             Node = Parent->Children[p_child_index];
         }
     }
@@ -792,9 +812,130 @@ void PyAnalyzer::checkSyntaxTree()
 {
 }
 
+std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::shared_ptr<SyntaxNode> Node)
+{
+
+    std::shared_ptr<SyntaxNode> current = Node;
+    std::vector<std::shared_ptr<SyntaxNode>> RPN;
+    std::stack<std::shared_ptr<SyntaxNode>> opStack;
+    std::stack<std::shared_ptr<SyntaxNode>> Stack;
+
+    while (true)
+    {
+        if (current->Token.TokenType == ETokenType::Variable
+            || current->Token.TokenType == ETokenType::Number
+            || current->Token.TokenType == ETokenType::Literal
+            || current->Token.TokenType == ETokenType::Function)
+        {
+            
+            RPN.push_back(current);
+
+            if (current->Children.back()->Token.TokenType == ETokenType::Delimeter) {}
+            else if ( current->Children.back()->Token.TokenType != ETokenType::Operator) { break; }
+            
+        }
+        else if (current->Token.ValueName == "(")
+        {
+            opStack.push(current);
+        }
+        else if (current->Token.ValueName == ")")
+        {
+            while (!opStack.empty() && opStack.top()->Token.TokenType != ETokenType::Delimeter)
+            {
+                RPN.push_back(opStack.top());
+                opStack.pop();
+            }
+            if (!opStack.empty() && opStack.top()->Token.TokenType == ETokenType::Delimeter && opStack.top()->Token.ValueName == "(")
+            {
+                opStack.pop();
+            }
+            else
+            {
+                throw std::runtime_error("Mismatched parentheses");
+            }
+        }
+        else
+        {
+            while (!opStack.empty()
+                && OperatorPrecedence[current->Token.ValueName] 
+                <= OperatorPrecedence[opStack.top()->Token.ValueName])
+            {
+                RPN.push_back(opStack.top());
+                opStack.pop();
+            }
+            opStack.push(current);
+        }
+
+        if (current->Children.empty()) { break; }
+        auto tmp = current->Children.back();
+        current->Children.pop_back();
+        current = tmp;
+
+    }
+
+    while (!opStack.empty())
+    {
+        RPN.push_back(opStack.top());
+        opStack.pop();
+    }
+
+    std::cout << "\n";
+    for (const auto& Token : RPN)
+    {
+        std::cout << Token->Token.ValueName << " ";
+    }
+
+    for (const auto& Token : RPN)
+    {
+        std::shared_ptr<SyntaxNode> Node = Token;
+
+        if (Token->Token.TokenType == ETokenType::Variable
+            || current->Token.TokenType == ETokenType::Number
+            || current->Token.TokenType == ETokenType::Literal
+            || current->Token.TokenType == ETokenType::Function
+            || Token->Token.TokenType == ETokenType::Operator)
+        {
+            if (Token->Token.TokenType == ETokenType::Operator)
+            {
+                if (Stack.size() < 2)
+                {
+                    throw std::runtime_error("Invalid expression");
+                }
+
+                auto Right = Stack.top();
+                Stack.pop();
+
+                auto Left = Stack.top();
+                Stack.pop();
+
+                Node->Children.push_back(Left);
+                Node->Children.push_back(Right);
+
+                Left->Parent = Node;
+                Right->Parent = Node;
+            }
+            Stack.push(Node);
+        }
+        else
+        {
+            throw std::runtime_error("Invalid expression");
+        }
+    }
+
+    if (Stack.size() != 1)
+    {
+        throw std::runtime_error("Invalid expression");
+    }
+
+    auto Root = Stack.top();
+    Root->Parent.reset();
+
+    return Root;
+}
+
 void PyAnalyzer::SyntaxNode::Print(int Depth)
 {
-    std::cout << std::string(std::max(0, Depth-1), '\t') << Token.ValueName << std::endl;
+    std::cout << " " << std::string(std::max(0, Depth - 1), '\t') << Token.ValueName << std::endl;
 
     for (auto Child : Children) {
          Child->Print(Depth + 1);
