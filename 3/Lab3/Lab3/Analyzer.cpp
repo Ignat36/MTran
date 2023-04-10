@@ -269,12 +269,12 @@ int PyAnalyzer::SyntaxAnalisis()
             int diff = CodeDeepth[Tokens[i - 1].RowIndex] - CodeDeepth[Tokens[i].RowIndex];
             if (diff < -1)
             {
-                Errors.push_back(Error("incorrect code deepth change at line " + std::to_string(i)));
+                Errors.push_back(Error("incorrect code deepth change at line " + std::to_string(Tokens[i].RowIndex)));
             }
 
             if (diff == -1 && Tokens[i-1].ValueName != ":")
             {
-                Errors.push_back(Error("Unexpected indent at line " + std::to_string(i)));
+                Errors.push_back(Error("Unexpected indent at line " + std::to_string(Tokens[i].RowIndex)));
             }
 
             while (diff > 0)
@@ -315,6 +315,12 @@ int PyAnalyzer::SyntaxAnalisis()
         }
         else if (Tokens[i].ValueName == ")") {
             // Move back up to the parent node
+
+            if (brackets.empty())
+            {
+                Errors.push_back(Error("Mismatched brackets at | " + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+                return 1;
+            }
 
             if (brackets.back() > 0 && Tokens[brackets.back() - 1].TokenType == ETokenType::Function)
             {
@@ -639,10 +645,24 @@ void PyAnalyzer::ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::share
             Node = Parent->Children[p_child_index];
         }
     }
+    else if (Node->Token.ValueName == "(")
+    {
+        Parent->Children[p_child_index] = BuildExpressionTree(Node);
+        Node = Parent->Children[p_child_index];
+    }
 
+    if (Node)
     for (int i = 0; i < Node->Children.size(); i++)
     {
         ReformatSyntaxNode(Node->Children[i], Node, i);
+    }
+
+    if (Node->Token.ValueName == "for")
+    {
+        if (Node->Children[0]->Token.ValueName != "in")
+        {
+            Errors.push_back(Error(" Incorrect for notation at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+        }
     }
 }
 
@@ -830,6 +850,7 @@ std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::sha
             
             RPN.push_back(current);
 
+            if (current->Children.empty()) { break; }
             if (current->Children.back()->Token.TokenType == ETokenType::Delimeter) {}
             else if ( current->Children.back()->Token.TokenType != ETokenType::Operator) { break; }
             
@@ -851,7 +872,8 @@ std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::sha
             }
             else
             {
-                throw std::runtime_error("Mismatched parentheses");
+                Errors.push_back(Error("Mismatched parentheses : at | " + std::to_string(current->Token.RowIndex) + ":" + std::to_string(current->Token.ColumnIndex)));
+                return std::shared_ptr<SyntaxNode>();
             }
         }
         else
@@ -879,27 +901,22 @@ std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::sha
         opStack.pop();
     }
 
-    std::cout << "\n";
-    for (const auto& Token : RPN)
-    {
-        std::cout << Token->Token.ValueName << " ";
-    }
-
     for (const auto& Token : RPN)
     {
         std::shared_ptr<SyntaxNode> Node = Token;
 
         if (Token->Token.TokenType == ETokenType::Variable
-            || current->Token.TokenType == ETokenType::Number
-            || current->Token.TokenType == ETokenType::Literal
-            || current->Token.TokenType == ETokenType::Function
+            || Token->Token.TokenType == ETokenType::Number
+            || Token->Token.TokenType == ETokenType::Literal
+            || Token->Token.TokenType == ETokenType::Function
             || Token->Token.TokenType == ETokenType::Operator)
         {
             if (Token->Token.TokenType == ETokenType::Operator)
             {
                 if (Stack.size() < 2)
                 {
-                    throw std::runtime_error("Invalid expression");
+                    Errors.push_back(Error("Invalid expression : at | " + std::to_string(Token->Token.RowIndex) + ":" + std::to_string(Token->Token.ColumnIndex)));
+                    return std::shared_ptr<SyntaxNode>();
                 }
 
                 auto Right = Stack.top();
@@ -918,13 +935,15 @@ std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::sha
         }
         else
         {
-            throw std::runtime_error("Invalid expression");
+            Errors.push_back(Error("Invalid expression : at | " + std::to_string(Token->Token.RowIndex) + ":" + std::to_string(Token->Token.ColumnIndex)));
+            return std::shared_ptr<SyntaxNode>();
         }
     }
 
     if (Stack.size() != 1)
     {
-        throw std::runtime_error("Invalid expression");
+        Errors.push_back(Error("Invalid expression : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+        return std::shared_ptr<SyntaxNode>();
     }
 
     auto Root = Stack.top();
