@@ -110,21 +110,26 @@ private:
 	std::string ReadOperator(int& x, int& y, bool& Flag);
 	std::string ReadWord(int& x, int& y, bool& Flag);
 	std::string ReadLiteral(int& x, int& y, bool& Flag);
-	void ReadFunctionSignature(int& x, int& y, bool& Flag);
-	void ReadForSignature(int& x, int& y, bool& Flag);
+	int ReadFunctionSignature(int& x, int& y, bool& Flag);
+	int ReadForSignature(int& x, int& y, bool& Flag);
 
 	//---------------------------------------------------------
 	//----------------SyntaxAnalisis---------------------------
 	//---------------------------------------------------------
-	void ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node);
-	void ProcessKeyWord(int& x, std::shared_ptr<SyntaxNode>& Node);
+	int ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node);
+	int ProcessKeyWord(int& x, std::shared_ptr<SyntaxNode>& Node);
 
-	void ReformatSyntaxTree();
-	void ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index);
+	int ReformatSyntaxTree();
+	int ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index);
 
-	void checkSingleTokenDependensies();
-	void checkBrackets();
-	void checkSyntaxTree();
+	int checkSingleTokenDependensies();
+	int checkBrackets();
+	int checkSyntaxTree();
+	int checkSyntaxTree(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index);
+	int checkBrakContinueNode(std::shared_ptr<SyntaxNode> Node);
+	int checkFunctionNode(std::shared_ptr<SyntaxNode> Node);
+	int checkFirstLineWordNode(std::shared_ptr<SyntaxNode> Node);
+	int checkElseElifNode(std::shared_ptr<SyntaxNode> Node);
 
 	std::shared_ptr<SyntaxNode> BuildExpressionTree(std::shared_ptr<SyntaxNode> Node);
 
@@ -151,7 +156,7 @@ private:
 	};
 
 	const std::unordered_set<std::string> BuiltinFunctions = {
-		"abs", "all", "any", "ascii", "bin", "bool", "bytearray", "bytes", "callable",
+		"[]", "abs", "all", "any", "ascii", "bin", "bool", "bytearray", "bytes", "callable",
 		"chr", "classmethod", "compile", "complex", "delattr", "dict", "dir", "divmod",
 		"enumerate", "eval", "exec", "filter", "float", "format", "frozenset", "getattr",
 		"globals", "hasattr", "hash", "help", "hex", "id", "input", "int", "isinstance",
