@@ -96,7 +96,7 @@ int PyAnalyzer::Analyze()
     checkSingleTokenDependensies();
     checkBrackets();
     SyntaxAnalisis(); 
-    ReformatSyntaxTree();
+    //ReformatSyntaxTree();
     checkSyntaxTree();
     SemanticAnalisis();
     return true;
@@ -256,6 +256,7 @@ int PyAnalyzer::SyntaxAnalisis()
     std::shared_ptr<SyntaxNode> current = SyntaxTree;;
     int deepth = 0;
     std::vector<int> brackets;
+    std::vector<int> BoxBrackets;
     
     for (int i = 0; i < Tokens.size(); i++) {
 
@@ -312,6 +313,28 @@ int PyAnalyzer::SyntaxAnalisis()
                 current = current->Children.back();
             }
             
+        }
+        else if (Tokens[i].ValueName == "[") {
+
+
+            if (i > 0 && Tokens[i - 1].TokenType == ETokenType::Variable)
+            {
+                current = current->Children.back();
+            }
+            else
+            {
+                std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
+                child->Token.ValueName = "[]";
+                current->Children.push_back(child);
+                current = current->Children.back();
+            }
+
+        }
+        else if (Tokens[i].ValueName == "]") {
+
+            // Make [] operator and not close i
+
+            current = current->Parent.lock();
         }
         else if (Tokens[i].ValueName == ")") {
             // Move back up to the parent node
@@ -754,6 +777,7 @@ void PyAnalyzer::checkSingleTokenDependensies()
                 Errors.push_back(Error("Unexpected operator in the end of line : " + Tokens[i].ValueName + " | at " + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
             }
             if (Tokens[i + 1].ValueName != "(" &&
+                Tokens[i + 1].ValueName != "[" &&
                  (Tokens[i + 1].TokenType == ETokenType::KeyWord
                 || Tokens[i + 1].TokenType == ETokenType::Operator
                 || Tokens[i + 1].TokenType == ETokenType::Delimeter)
