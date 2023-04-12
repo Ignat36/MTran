@@ -14,92 +14,16 @@ void PyAnalyzer::PrintSyntaxTree()
     SyntaxTree->Print();
 }
 
-void PyAnalyzer::PrintTablesForLab()
-{
-    std::unordered_set<std::string> un;
-
-    std::string line(80, '-'); line += "\n";
-    std::cout << line << "  Key words:\n" << line;
-    for (auto& i : Tokens)
-    {
-        if (i.TokenType == ETokenType::KeyWord)
-        {
-            if (un.count(i.ValueName) == 0)
-            {
-                std::cout << "     " << i.ValueName << "\n";
-                un.insert(i.ValueName);
-            }
-        }
-    }
-    std::cout << line; un.clear();
-
-    std::cout << line << "  Constants:\n" << line;
-    for (auto& i : Tokens)
-    {
-        if (i.TokenType == ETokenType::Number)
-        {
-            if (un.count(i.ValueName) == 0)
-            {
-                std::cout << "     " << i.ValueName << "\n";
-                un.insert(i.ValueName);
-            }
-        }
-    }
-    std::cout << line; un.clear();
-
-    std::cout << line << "  Literals:\n" << line;
-    for (auto& i : Tokens)
-    {
-        if (i.TokenType == ETokenType::Literal)
-        {
-            if (un.count(i.ValueName) == 0)
-            {
-                std::cout << "     " << i.ValueName << "\n";
-                un.insert(i.ValueName);
-            }
-        }
-    }
-    std::cout << line; un.clear();
-
-    std::cout << line << "  Operators:\n" << line;
-    for (auto& i : Tokens)
-    {
-        if (i.TokenType == ETokenType::Operator)
-        {
-            if (un.count(i.ValueName) == 0)
-            {
-                std::cout << "     " << i.ValueName << "\n";
-                un.insert(i.ValueName);
-            }
-        }
-    }
-    std::cout << line; un.clear();
-
-    std::cout << line << "  Variables:\n" << line;
-    for (auto& i : Tokens)
-    {
-        if (i.TokenType == ETokenType::Variable)
-        {
-            if (un.count(i.ValueName) == 0)
-            {
-                std::cout << "     " << i.ValueName << "\n";
-                un.insert(i.ValueName);
-            }
-        }
-    }
-    std::cout << line; un.clear();
-}
-
 int PyAnalyzer::Analyze()
 {
     LexicalAnalisis();
     checkSingleTokenDependensies();
     checkBrackets();
     SyntaxAnalisis();
-    checkSyntaxTree();
     ReformatSyntaxTree();
+    checkSyntaxTree();
     SemanticAnalisis();
-    return true;
+    return 0;;
 }
 
 int PyAnalyzer::LexicalAnalisis()
@@ -134,7 +58,16 @@ int PyAnalyzer::LexicalAnalisis()
                 Tokens.push_back(FToken(Token, "delimeter", i, j, ETokenType::Delimeter));
                 continue;
             }
-            if ((c >= '0' && c <= '9') || c == '.')
+            if ((c >= '0' && c <= '9') || c == '.' 
+                || (j + 1 < Code[i].size() && (Code[i][j] == '+' || Code[i][j] == '-') 
+                    && Code[i][j + 1] >= '0' 
+                    && Code[i][j + 1] <= '9' 
+                    && Tokens.back().ValueName != ")" 
+                    && Tokens.back().ValueName != "]" 
+                    && Tokens.back().TokenType != ETokenType::Number
+                    && Tokens.back().TokenType != ETokenType::Variable
+                    && Tokens.back().TokenType != ETokenType::Literal
+                    ))
             {
                 Token = ReadNumberConstant(i, j, ReturnFlag);
                 if (!ReturnFlag) Tokens.push_back(FToken(Token, "constant", i, j, ETokenType::Number));
@@ -253,10 +186,12 @@ int PyAnalyzer::SyntaxAnalisis()
 {
     SyntaxTree = std::make_shared<SyntaxNode>(FToken("", "", 0, 0));
     SyntaxTree->Parent = SyntaxTree;
+    SyntaxTree->Token.TokenType = ETokenType::Function;
     std::shared_ptr<SyntaxNode> current = SyntaxTree;;
     int deepth = 0;
     std::vector<int> brackets;
     std::vector<int> BoxBrackets;
+    std::vector<std::shared_ptr<SyntaxNode>> FunctionsStack;
     
     for (int i = 0; i < Tokens.size(); i++) {
 
@@ -305,6 +240,7 @@ int PyAnalyzer::SyntaxAnalisis()
             if (i > 0 && Tokens[i - 1].TokenType == ETokenType::Function)
             {
                 current = current->Children.back();
+                FunctionsStack.push_back(current);
             }
             else
             {
@@ -329,14 +265,29 @@ int PyAnalyzer::SyntaxAnalisis()
                 child->Token.Description = "create array";
                 current->Children.push_back(child);
                 current = current->Children.back();
+                FunctionsStack.push_back(current);
             }
 
         }
         else if (Tokens[i].ValueName == "]") {
 
             // Make [] operator and not close i
+            if (FunctionsStack.size() && FunctionsStack.back()->Token.ValueName == "[]")
+                FunctionsStack.pop_back();
 
             current = current->Parent.lock();
+        }
+        else if (Tokens[i].ValueName == ",") {
+
+            if (FunctionsStack.empty())
+            {
+                Errors.push_back(Error("Incoorect use of ',' outside function at | " + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+                return 1;
+            }
+
+            current = FunctionsStack.back();
+            std::shared_ptr<SyntaxNode> child = std::make_shared<SyntaxNode>(Tokens[i], current);
+            current->Children.push_back(child);
         }
         else if (Tokens[i].ValueName == ")") {
             // Move back up to the parent node
@@ -349,7 +300,18 @@ int PyAnalyzer::SyntaxAnalisis()
 
             if (brackets.back() > 0 && Tokens[brackets.back() - 1].TokenType == ETokenType::Function)
             {
-                current = current->Parent.lock();
+                
+                if (FunctionsStack.size())
+                {
+                    current = FunctionsStack.back()->Parent.lock();
+                    //current = current->Parent.lock();
+                    FunctionsStack.pop_back();
+                }
+                else
+                {
+                    Errors.push_back(Error("Mismatched brackets at | " + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+                    return 1;
+                }
             }
             else
             {
@@ -360,6 +322,7 @@ int PyAnalyzer::SyntaxAnalisis()
             }
 
             brackets.pop_back();
+            
         } 
         else if (Tokens[i].TokenType == ETokenType::Operator)
         {
@@ -389,6 +352,10 @@ std::string PyAnalyzer::ReadNumberConstant(int& x, int& y, bool& Flag)
     bool WasDot = false;
     bool WasComplexJ = false;
     bool BadToken = false;
+
+    if (Code[x][y] == '-') res += Code[x][y];
+    if (Code[x][y] == '-' || Code[x][y] == '+') y++;
+    
 
     for (; y < Code[x].size(); y++)
     {
@@ -700,7 +667,27 @@ int PyAnalyzer::ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared
 
     if (Node->Token.ValueName == "if" || Node->Token.ValueName == "while" || Node->Token.ValueName == "elif")
     {
+        if (Node->Children[0]->Token.TokenType != ETokenType::Number
+            && Node->Children[0]->Token.TokenType != ETokenType::Variable
+            && Node->Children[0]->Token.TokenType != ETokenType::Function
+            && Node->Children[0]->Token.TokenType != ETokenType::Operator
+            )
+        {
+            Errors.push_back(Error(std::string(" Expected expression but found ") + '\"' + Code[Node->Token.RowIndex] + '\"' + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
+    }
 
+    if (Node->Token.ValueName == "else" || Node->Token.ValueName == "elif")
+    {
+        if (p_child_index == 0 
+            || !(Parent->Children[p_child_index - 1]->Token.ValueName == "if"
+            || Parent->Children[p_child_index - 1]->Token.ValueName == "elif")
+            )
+        {
+            Errors.push_back(Error(std::string(" Expected if or elif notations befor  ") + Node->Token.ValueName + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
     }
 
     return 0;
@@ -725,6 +712,13 @@ int PyAnalyzer::checkSingleTokenDependensies()
             if (Tokens[i + 1].RowIndex == Tokens[i].RowIndex)
             {
                 Errors.push_back(Error(" colon ':' must be followed by new string with additional tab, but found : " + Tokens[i].ValueName + std::string(" | at ") + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+                return 1;
+            }
+            else if (i + 1 < Tokens.size()
+                && CodeDeepth[Tokens[i + 1].RowIndex] - 1 !=
+                CodeDeepth[Tokens[i].RowIndex])
+            {
+                Errors.push_back(Error(" Line after colon must be on new deepth " + std::string(" | at ") + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
                 return 1;
             }
         }
@@ -897,8 +891,8 @@ int PyAnalyzer::checkSyntaxTree()
     // delete ',' 
     for (int i = 0; i < SyntaxTree->Children.size(); i++)
     {
-        /*if (checkFirstLineWordNode(SyntaxTree->Children[i])) return 1;
-        if (checkSyntaxTree(SyntaxTree->Children[i], SyntaxTree, i)) return 1;*/
+        if (checkFirstLineWordNode(SyntaxTree->Children[i])) return 1;
+        if (checkSyntaxTree(SyntaxTree->Children[i], SyntaxTree, i)) return 1;
     }
 
     return 0;
@@ -906,8 +900,116 @@ int PyAnalyzer::checkSyntaxTree()
 
 int PyAnalyzer::checkSyntaxTree(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index)
 {
+
+    if (Node->Token.TokenType == ETokenType::Literal
+        || Node->Token.TokenType == ETokenType::Number)
+    {
+        if (Node->Children.size())
+        {
+            Errors.push_back(Error("Unexpected syntax node" + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
+    }
+    else if (Node->Token.TokenType == ETokenType::Variable)
+    {
+        if (Node->Children.size() == 0) {}
+        else if (Node->Children.size() == 1)
+        {
+            if (Node->Children.back()->Token.TokenType == ETokenType::Literal
+                || Node->Children.back()->Token.TokenType == ETokenType::KeyWord
+                )
+            {
+                Errors.push_back(Error("Expected numeric expression " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return 1;
+            }
+        }
+        else
+        {
+            Errors.push_back(Error("Unexpected syntax nodes after " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
+    }
+    else if (Node->Token.TokenType == ETokenType::KeyWord)
+    {
+        if (Node->Token.ValueName == "break"
+            || Node->Token.ValueName == "continue")
+        {
+            if (checkBrakContinueNode(Node)) return 1;
+        }
+    }
+    else if (Node->Token.TokenType == ETokenType::Function)
+    {
+        if (checkFunctionNode(Node)) return 1;
+    }
+    else if (Node->Token.TokenType == ETokenType::Delimeter)
+    {
+        Errors.push_back(Error("Unreached delimeter " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+        return 1;
+    }
+    else if (Node->Token.TokenType == ETokenType::Operator)
+    {
+        // something but probably leave for semantic analise
+    }
+
+    for (int i = 0; i < Node->Children.size(); i++)
+    {
+        if (checkSyntaxTree(Node->Children[i], Node, i)) return 1;
+    }
+
     return 0;
 }
+
+int PyAnalyzer::checkBrakContinueNode(std::shared_ptr<SyntaxNode> Node)
+{
+    auto tmp = Node;
+    while (tmp->Token.ValueName != "for" && tmp->Token.ValueName != "while" && tmp != SyntaxTree)
+        tmp = tmp->Parent.lock();
+
+    if (tmp == SyntaxTree)
+    {
+        Errors.push_back(Error("Unreached delimeter " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+        return 1;
+    }
+
+    return 0;
+}
+
+int PyAnalyzer::checkFunctionNode(std::shared_ptr<SyntaxNode> Node)
+{
+    std::vector<std::shared_ptr<SyntaxNode>> childs;
+    for (int i = 1; i < Node->Children.size(); i += 2)
+    {
+        if (Node->Children[i]->Token.ValueName != ",")
+        {
+            Errors.push_back(Error("Statements in function must be seperated with commas : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
+    }
+
+    for (int i = 0; i < Node->Children.size(); i += 2)
+    {
+        childs.push_back(Node->Children[i]);
+    }
+
+    Node->Children = childs;
+
+    return 0;
+}
+
+int PyAnalyzer::checkFirstLineWordNode(std::shared_ptr<SyntaxNode> Node)
+{
+
+    auto T = Node->Token;
+
+    if (T.TokenType == ETokenType::Delimeter)
+    {
+        Errors.push_back(Error("Unexpected delimeter " + T.ValueName + " : at | " + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex)));
+        return 1;
+    }
+
+    return 0;
+}
+
 
 std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::shared_ptr<SyntaxNode> Node)
 {
@@ -916,6 +1018,13 @@ std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::sha
     std::vector<std::shared_ptr<SyntaxNode>> RPN;
     std::stack<std::shared_ptr<SyntaxNode>> opStack;
     std::stack<std::shared_ptr<SyntaxNode>> Stack;
+
+    if (current->Token.TokenType == ETokenType::Variable &&
+        current->Token.ValueName == "b")
+    {
+        int a = 1;
+        int b = 2;
+    }
 
     while (true)
     {
@@ -992,7 +1101,7 @@ std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::sha
             {
                 if (Stack.size() < 2)
                 {
-                    Errors.push_back(Error("Invalid expression : at | " + std::to_string(Token->Token.RowIndex) + ":" + std::to_string(Token->Token.ColumnIndex)));
+                    Errors.push_back(Error("Invalid expression 1 : at | " + std::to_string(Token->Token.RowIndex) + ":" + std::to_string(Token->Token.ColumnIndex)));
                     return std::shared_ptr<SyntaxNode>();
                 }
 
@@ -1012,14 +1121,14 @@ std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::sha
         }
         else
         {
-            Errors.push_back(Error("Invalid expression : at | " + std::to_string(Token->Token.RowIndex) + ":" + std::to_string(Token->Token.ColumnIndex)));
+            Errors.push_back(Error("Invalid expression 2 : at | " + std::to_string(Token->Token.RowIndex) + ":" + std::to_string(Token->Token.ColumnIndex)));
             return std::shared_ptr<SyntaxNode>();
         }
     }
 
     if (Stack.size() != 1)
     {
-        Errors.push_back(Error("Invalid expression : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+        Errors.push_back(Error("Invalid expression 3 : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
         return std::shared_ptr<SyntaxNode>();
     }
 

@@ -76,8 +76,6 @@ public:
 	const std::vector<FToken>& GetTokens() { return Tokens; }
 	void PrintSyntaxTree();
 
-	void PrintTablesForLab();
-
 protected:
 
 	std::vector<std::string> Code;
@@ -129,7 +127,6 @@ private:
 	int checkBrakContinueNode(std::shared_ptr<SyntaxNode> Node);
 	int checkFunctionNode(std::shared_ptr<SyntaxNode> Node);
 	int checkFirstLineWordNode(std::shared_ptr<SyntaxNode> Node);
-	int checkElseElifNode(std::shared_ptr<SyntaxNode> Node);
 
 	std::shared_ptr<SyntaxNode> BuildExpressionTree(std::shared_ptr<SyntaxNode> Node);
 
