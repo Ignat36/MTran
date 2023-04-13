@@ -580,7 +580,7 @@ int PyAnalyzer::ProcessExpression(int& x, std::shared_ptr<SyntaxNode>& Node)
 
     if (AssigmentOperators.count(Tokens[x].ValueName))
     {
-        if (x - 1 >= 0 && Tokens[x - 1].TokenType == ETokenType::Variable)
+        if (x - 1 >= 0 && (Tokens[x - 1].TokenType == ETokenType::Variable || Tokens[x - 1].ValueName == "]"))
         {
             Node = Node->Children.back();
             std::shared_ptr<SyntaxNode> Child = std::make_shared<SyntaxNode>(Tokens[x], Node);
@@ -948,7 +948,38 @@ int PyAnalyzer::checkSyntaxTree(std::shared_ptr<SyntaxNode> Node, std::shared_pt
     }
     else if (Node->Token.TokenType == ETokenType::Operator)
     {
-        // something but probably leave for semantic analise
+        if (Node->Children.size() != 2)
+        {
+            Errors.push_back(Error("Incorrect expression in operator " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
+
+        if (AssigmentOperators.count(Node->Token.ValueName))
+        {
+            if (Node->Children[0]->Token.TokenType != ETokenType::Variable)
+            {
+                Errors.push_back(Error("Must be variable to assign with operator " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return 1;
+            }
+        }
+        else if (ComparisonOperators.count(Node->Token.ValueName))
+        {
+            if (ComparisonOperators.count(Node->Children[0]->Token.ValueName)
+                || ComparisonOperators.count(Node->Children[1]->Token.ValueName)
+                )
+            {
+                Errors.push_back(Error("Cant double or triple compare with operator " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return 1;
+            }
+        }
+
+        if (!AssigmentOperators.count(Node->Token.ValueName)
+            && (AssigmentOperators.count(Node->Children[0]->Token.ValueName)
+                || AssigmentOperators.count(Node->Children[1]->Token.ValueName)))
+        {
+            Errors.push_back(Error("Cant use assigment operators inside expressions : operator " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
     }
 
     for (int i = 0; i < Node->Children.size(); i++)
@@ -998,6 +1029,11 @@ int PyAnalyzer::checkFunctionNode(std::shared_ptr<SyntaxNode> Node)
 
 int PyAnalyzer::checkFirstLineWordNode(std::shared_ptr<SyntaxNode> Node)
 {
+
+    if (!Node)
+    {
+        return 0;
+    }
 
     auto T = Node->Token;
 

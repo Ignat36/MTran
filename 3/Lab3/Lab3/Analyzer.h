@@ -130,6 +130,10 @@ private:
 
 	std::shared_ptr<SyntaxNode> BuildExpressionTree(std::shared_ptr<SyntaxNode> Node);
 
+	//---------------------------------------------------------
+	//----------------SemanticAnalisis-------------------------
+	//---------------------------------------------------------
+
 private:
 
 	std::unordered_set<std::string> Variables;
@@ -203,6 +207,10 @@ private:
 	"=", "+=", "-=", "*=", "/=",          // Assignment Operators
 	"//=", "%=", "**=", "&=", "|=", "^=", // Assignment Operators
 	"<<=", ">>="                          // Assignment Operators
+	};
+
+	const std::unordered_set<std::string> ComparisonOperators = {
+	"==", "!=", "<", "<=", ">", ">=",     // Comparison Operators
 	};
 
 	std::unordered_map<std::string, int> OperatorPrecedence{
