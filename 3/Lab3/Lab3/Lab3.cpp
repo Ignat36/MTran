@@ -31,11 +31,6 @@ int main()
         std::cout << FileName << " : " << i.Message << "\n";
         return 0;
     }
-    
-    /*for (auto i : Tokens)
-    {
-        std::cout << i.ValueName << " | " << i.Description << " | at " << i.RowIndex << ":" << i.ColumnIndex << "\n";
-    }*/
 
     Analyzer.PrintSyntaxTree();
     

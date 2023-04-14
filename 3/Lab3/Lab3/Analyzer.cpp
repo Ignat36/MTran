@@ -128,7 +128,7 @@ int PyAnalyzer::LexicalAnalisis()
                 Tokens.push_back(FToken(Token, "build-in function", i, j, ETokenType::Function));
                 continue;
             }
-            if (Variables.count(Token))
+            if (TokenVariables.count(Token))
             {
                 VariablesTable.Rows.push_back(FToken(Token, "variable", i, j));
                 Tokens.push_back(FToken(Token, "variable", i, j, ETokenType::Variable));
@@ -163,7 +163,7 @@ int PyAnalyzer::LexicalAnalisis()
             }
             else
             {
-                Variables.insert(Token);
+                TokenVariables.insert(Token);
                 Tokens.push_back(FToken(Token, "variable", i, j, ETokenType::Variable));
                 continue;
             }
@@ -255,6 +255,7 @@ int PyAnalyzer::SyntaxAnalisis()
 
             if (i > 0 && Tokens[i - 1].TokenType == ETokenType::Variable)
             {
+                FunctionsStack.push_back(current);
                 current = current->Children.back();
             }
             else
@@ -266,16 +267,19 @@ int PyAnalyzer::SyntaxAnalisis()
                 current->Children.push_back(child);
                 current = current->Children.back();
                 FunctionsStack.push_back(current);
+                
             }
-
         }
         else if (Tokens[i].ValueName == "]") {
 
             // Make [] operator and not close i
-            if (FunctionsStack.size() && FunctionsStack.back()->Token.ValueName == "[]")
-                FunctionsStack.pop_back();
+            if (FunctionsStack.empty())
+            {
+                Errors.push_back(Error("Incoorect use of ',' outside function at | " + std::to_string(Tokens[i].RowIndex) + ":" + std::to_string(Tokens[i].ColumnIndex)));
+                return 1;
+            }
 
-            current = current->Parent.lock();
+            current = FunctionsStack.back();
         }
         else if (Tokens[i].ValueName == ",") {
 
@@ -343,6 +347,24 @@ int PyAnalyzer::SyntaxAnalisis()
 
 int PyAnalyzer::SemanticAnalisis()
 {
+    /*int a = 1;
+    float b = 3.14;
+    std::string c = "Hellow, World!";
+    std::vector<FVariable> v;
+    v.push_back(FVariable("a", "int", &a));
+    v.push_back(FVariable("b", "float", &b));
+    v.push_back(FVariable("c", "string", &c));
+    FVariable d("d", "array", &v);
+
+    d.Print();
+
+    return 0;*/
+
+    for (int i = 0; i < SyntaxTree->Children.size(); i++)
+    {
+        if (SemanticCheck(SyntaxTree->Children[i], SyntaxTree, i)) return 1;
+    }
+
     return 0;
 }
 
@@ -473,41 +495,44 @@ std::string PyAnalyzer::ReadLiteral(int& x, int& y, bool& Flag)
     int BracesCount = 0;
     char BegBrace = Code[x][y];
 
-    for (; x < Code.size(); x++)
+    for (; y < Code[x].size(); y++)
     {
-        for (; y < Code[x].size(); y++)
+        if (BracesCount == 2)
         {
-            if (BracesCount == 2)
+            y--;
+            Flag = BadToken;
+            return res;
+        }
+
+        char c = Code[x][y];
+
+        if (c == BegBrace)
+        {
+            BracesCount++;
+            continue;
+        }
+
+        res += c;
+
+        if (c == '\\')
+        {
+            if (!(y + 1 < Code[x].size() && AllowedEscapeChars.count(Code[x][y + 1])))
             {
-                y--;
-                Flag = BadToken;
-                return res;
+                BadToken = true;
             }
 
-            char c = Code[x][y];
-
-            if (c == BegBrace)
+            if (y + 1 < Code[x].size())
             {
-                BracesCount++;
-                continue;
-            }
-
-            res += c;
-
-            if (c == '\\')
-            {
-                if (!(y + 1 < Code[x].size() && AllowedEscapeChars.count(Code[x][y + 1])))
-                {
-                    BadToken = true;
-                }
-
-                if (y + 1 < Code[x].size())
-                {
-                    y++;
-                    res += Code[x][y];
-                }
+                y++;
+                res += Code[x][y];
             }
         }
+    }
+
+    if (BracesCount == 2)
+    {
+        Flag = BadToken;
+        return res;
     }
 
     Errors.push_back(Error(std::string("Braces are opend, but never closed : ") + std::to_string(x) + ":" + std::to_string(y)));
@@ -568,7 +593,7 @@ int PyAnalyzer::ReadForSignature(int& x, int& y, bool& Flag)
     }
     else
     {
-        Variables.insert(Name);
+        TokenVariables.insert(Name);
         Tokens.push_back(FToken(Name, "variable", x, y, ETokenType::Variable));
     }
 
@@ -658,7 +683,7 @@ int PyAnalyzer::ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared
 
     if (Node->Token.ValueName == "for")
     {
-        if (Node->Children[0]->Token.ValueName != "in")
+        if (Node->Children.size() == 0 || Node->Children[0]->Token.ValueName != "in")
         {
             Errors.push_back(Error(" Incorrect for notation at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
             return 1;
@@ -667,11 +692,12 @@ int PyAnalyzer::ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared
 
     if (Node->Token.ValueName == "if" || Node->Token.ValueName == "while" || Node->Token.ValueName == "elif")
     {
-        if (Node->Children[0]->Token.TokenType != ETokenType::Number
+        if (Node->Children.size() == 0 || (
+            Node->Children[0]->Token.TokenType != ETokenType::Number
             && Node->Children[0]->Token.TokenType != ETokenType::Variable
             && Node->Children[0]->Token.TokenType != ETokenType::Function
             && Node->Children[0]->Token.TokenType != ETokenType::Operator
-            )
+            ))
         {
             Errors.push_back(Error(std::string(" Expected expression but found ") + '\"' + Code[Node->Token.RowIndex] + '\"' + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
             return 1;
@@ -900,7 +926,7 @@ int PyAnalyzer::checkSyntaxTree()
 
 int PyAnalyzer::checkSyntaxTree(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index)
 {
-
+    if (!Node) return 0;
     if (Node->Token.TokenType == ETokenType::Literal
         || Node->Token.TokenType == ETokenType::Number)
     {
@@ -998,7 +1024,7 @@ int PyAnalyzer::checkBrakContinueNode(std::shared_ptr<SyntaxNode> Node)
 
     if (tmp == SyntaxTree)
     {
-        Errors.push_back(Error("Unreached delimeter " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+        Errors.push_back(Error("Unreached key word " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
         return 1;
     }
 
@@ -1174,6 +1200,132 @@ std::shared_ptr<PyAnalyzer::SyntaxNode> PyAnalyzer::BuildExpressionTree(std::sha
     return Root;
 }
 
+int PyAnalyzer::SemanticCheck(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index, int scope)
+{
+    // типы операндов литералы, числа не сравниваются
+    
+    /*int a = 1;
+    float b = 3.14;
+    std::string c = "Hellow, World!";
+    std::vector<FVariable> v;
+    v.push_back(FVariable("a", "int", &a));
+    v.push_back(FVariable("b", "float", &b));
+    v.push_back(FVariable("c", "string", &c));
+    FVariable d("d", "array", &v);
+
+    d.Print();
+
+    return 0;*/
+    if (!Node) return 0;
+    if (Node->Token.TokenType == ETokenType::Operator) // check operands
+    {
+        if (AssigmentOperators.count(Node->Token.ValueName))
+        {
+
+        }
+        else
+        {
+            if ((Node->Token.ValueName == "/"
+                || Node->Token.ValueName == "%"
+                || Node->Token.ValueName == "//")
+                && Node->Children[1]->Token.ValueName == "0"
+                && Node->Children[1]->Token.TokenType == ETokenType::Number
+                )
+            {
+                Errors.push_back(Error("Division by zero : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return 1;
+            }
+
+            if ((Node->Children[0]->Token.TokenType == ETokenType::Number
+                && Node->Children[1]->Token.TokenType == ETokenType::Literal)
+                || 
+                (Node->Children[1]->Token.TokenType == ETokenType::Number
+                && Node->Children[0]->Token.TokenType == ETokenType::Literal))
+            {
+                Errors.push_back(Error("Cant do operation between string and number : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return 1;
+            }
+        }
+    }
+    else if (Node->Token.TokenType == ETokenType::Function) // check func signature
+    {
+        if (Node->Token.ValueName == "print")
+        {
+            // в приинципе можно все 
+        }
+        else if (Node->Token.ValueName == "range")
+        {
+
+        }
+        else if (Node->Token.ValueName == "int")
+        {
+
+        }
+        else if (Node->Token.ValueName == "input")
+        {
+
+        }
+        else if (Node->Token.ValueName == "float")
+        {
+
+        }
+        else if (Node->Token.ValueName == "array")
+        {
+
+        }
+        else if (Node->Token.ValueName == "string")
+        {
+
+        }
+        else if (Node->Token.ValueName == "char")
+        {
+
+        }
+
+    }
+    else if (Node->Token.TokenType == ETokenType::Variable) // check [] operator
+    {
+        if (Node->Children.size()
+            && Node->Children[0]->Token.TokenType == ETokenType::Literal)
+        {
+            Errors.push_back(Error("Literal can't be an array index : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
+
+        if (Node->Children.size()
+            && Node->Children[0]->Token.TokenType == ETokenType::Number
+            && GetNumberType(Node->Children[0]->Token.ValueName) > 1)
+        {
+            Errors.push_back(Error("Only integers can be an array index : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return 1;
+        }
+    }
+
+    for (int i = 0; i < Node->Children.size(); i++)
+    {
+        if (SemanticCheck(Node->Children[i], Node, i, scope + 1)) return 1;
+    }
+
+    return 0;
+}
+
+int PyAnalyzer::GetNumberType(const std::string& val)
+{
+    if (val.find("j") != val.npos || val.find("J") != val.npos)
+    {
+        return 3;
+    }
+    if (val.find(".") != val.npos)
+    {
+        return 2;
+    }
+    else
+    {
+        return 1;
+    }
+    return 0;
+}
+
 void PyAnalyzer::SyntaxNode::Print(int Depth)
 {
     std::cout << " " << std::string(std::max(0, Depth - 1), '\t') << Token.ValueName << std::endl;
@@ -1181,4 +1333,45 @@ void PyAnalyzer::SyntaxNode::Print(int Depth)
     for (auto Child : Children) {
          Child->Print(Depth + 1);
     }
+}
+
+int PyAnalyzer::FVariable::Print(bool doNewLine)
+{
+    if (Type == "int")
+    {
+        int val = *reinterpret_cast<int*>(Value);
+        std::cout << val;
+    }
+    else if (Type == "float")
+    {
+        float val = *reinterpret_cast<float*>(Value);
+        std::cout << val;
+    }
+    else if (Type == "string")
+    {
+        std::string val = *reinterpret_cast<std::string*>(Value);
+        std::cout << val;
+    }
+    else if (Type == "array")
+    {
+        std::vector<FVariable> val = *reinterpret_cast<std::vector<FVariable>*>(Value);
+        
+        std::cout << "[";
+
+        if (val.size())
+        {
+            val[0].Print(false);
+        }
+
+        for (int i = 0; i < val.size(); i++)
+        {
+            std::cout << ", ";
+            val[i].Print(false);
+        }
+        std::cout << "]";
+    }
+
+    if (doNewLine) std::cout << "\n";
+
+    return 0;
 }

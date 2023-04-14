@@ -9,7 +9,7 @@
 class PyAnalyzer
 {
 
-public:
+private:
 
 	enum class ETokenType
 	{
@@ -23,7 +23,7 @@ public:
 		Delimeter
 	};
 
-public:
+private:
 
 	struct Error
 	{
@@ -32,6 +32,19 @@ public:
 		Error(std::string msg)
 			: Message(msg)
 		{}
+	};
+
+	struct FVariable
+	{
+		std::string Type;
+		std::string Name;
+		int Scope;
+		void* Value;
+
+		FVariable(std::string _Name, std::string _Type, void* _Value)
+			: Name(_Name), Type(_Type), Value(_Value), Scope(0) {}
+
+		int Print(bool doNewLine = true);
 	};
 
 	struct FToken
@@ -133,11 +146,14 @@ private:
 	//---------------------------------------------------------
 	//----------------SemanticAnalisis-------------------------
 	//---------------------------------------------------------
+	int SemanticCheck(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index, int scope = 0);
+	int GetNumberType(const std::string& val);
 
 private:
 
-	std::unordered_set<std::string> Variables;
+	std::unordered_set<std::string> TokenVariables;
 	std::unordered_set<std::string> Functions;
+	std::unordered_map<std::string, FVariable> Vars;
 
 	const std::unordered_set<char> AllowedCharacters = {
 	'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',

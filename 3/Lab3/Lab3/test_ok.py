@@ -1,13 +1,14 @@
+a = 3
 num = int(input("Enter a number: ")) + int(input("Enter a number: "))
 factorial = 2 + (2 * 2) + 2
 a = 1
 b = 2
-a = 3
-c = 3
+c = 3 
 arr = [a, 1 - (45 ** int(input(b + (c-int()), 4 - 10))), a, 4 * 9, c - 5]
-print(arr[0])
-print()
-arr[0] = 4
+print(a)
+print(b)
+print(c)
+arr[1] = 4
 if (num < 0):
 	print("Sorry, factorial does not exist for negative numbers")
 elif num == 0:
