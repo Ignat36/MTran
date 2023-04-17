@@ -27,7 +27,7 @@ private:
 
 	struct Error
 	{
-		const std::string Message;
+		std::string Message;
 
 		Error(std::string msg)
 			: Message(msg)
@@ -43,6 +43,8 @@ private:
 
 		FVariable(std::string _Name, std::string _Type, void* _Value)
 			: Name(_Name), Type(_Type), Value(_Value), Scope(0) {}
+
+		FVariable() : Type("") {}
 
 		int Print(bool doNewLine = true);
 	};
@@ -149,6 +151,16 @@ private:
 	int SemanticCheck(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<SyntaxNode> Parent, int p_child_index, int scope = 0);
 	int GetNumberType(const std::string& val);
 
+	//---------------------------------------------------------
+	//----------------SemanticAnalisis-------------------------
+	//---------------------------------------------------------
+	int Execute();
+	int ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id);
+	FVariable ExecExpr(std::shared_ptr<SyntaxNode> Node);
+	FVariable ExecFunction(std::shared_ptr<SyntaxNode> Node);
+	FVariable ExecOperation(std::string op, FVariable l, FVariable r);
+	FVariable GetNumFromString(const std::string& val);
+
 private:
 
 	std::unordered_set<std::string> TokenVariables;
@@ -180,7 +192,7 @@ private:
 		"issubclass", "iter", "len", "list", "locals", "map", "max", "memoryview", "min",
 		"next", "object", "oct", "open", "ord", "pow", "print", "property", "range",
 		"repr", "reversed", "round", "set", "setattr", "slice", "sorted", "staticmethod",
-		"str", "sum", "super", "tuple", "type", "vars", "zip"
+		"str", "sum", "super", "tuple", "type", "vars", "zip", "string"
 	};
 
 	const std::unordered_set<std::string> BuiltinTypes = {

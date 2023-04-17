@@ -9,6 +9,10 @@ print(a)
 print(b)
 print(c)
 arr[1] = 4
+if c in arr:
+	print(1)
+if b in [1, 2, 4, 7, 8]:
+	print("Hello")
 if (num < 0):
 	print("Sorry, factorial does not exist for negative numbers")
 elif num == 0:

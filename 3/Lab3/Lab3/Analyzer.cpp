@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <stack>
+#include <complex>
 
 PyAnalyzer::PyAnalyzer(std::vector<std::string>& _Code) : Code(_Code)
 {
@@ -16,13 +17,14 @@ void PyAnalyzer::PrintSyntaxTree()
 
 int PyAnalyzer::Analyze()
 {
-    LexicalAnalisis();
-    checkSingleTokenDependensies();
-    checkBrackets();
-    SyntaxAnalisis();
-    ReformatSyntaxTree();
-    checkSyntaxTree();
-    SemanticAnalisis();
+    LexicalAnalisis(); if (Errors.size()) return 1;
+    checkSingleTokenDependensies(); if (Errors.size()) return 1;
+    checkBrackets(); if (Errors.size()) return 1;
+    SyntaxAnalisis(); if (Errors.size()) return 1;
+    ReformatSyntaxTree(); if (Errors.size()) return 1;
+    checkSyntaxTree(); if (Errors.size()) return 1;
+    SemanticAnalisis(); if (Errors.size()) return 1;
+    Execute(); if (Errors.size()) return 1;
     return 0;;
 }
 
@@ -666,12 +668,14 @@ int PyAnalyzer::ReformatSyntaxNode(std::shared_ptr<SyntaxNode> Node, std::shared
         {
             Parent->Children[p_child_index] = BuildExpressionTree(Node);
             Node = Parent->Children[p_child_index];
+            Node->Parent = Parent;
         }
     }
     else if (Node->Token.ValueName == "(")
     {
         Parent->Children[p_child_index] = BuildExpressionTree(Node);
         Node = Parent->Children[p_child_index];
+        Node->Parent = Parent;
     }
 
     if (!Node) return 0;
@@ -1204,18 +1208,6 @@ int PyAnalyzer::SemanticCheck(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<
 {
     // типы операндов литералы, числа не сравниваются
     
-    /*int a = 1;
-    float b = 3.14;
-    std::string c = "Hellow, World!";
-    std::vector<FVariable> v;
-    v.push_back(FVariable("a", "int", &a));
-    v.push_back(FVariable("b", "float", &b));
-    v.push_back(FVariable("c", "string", &c));
-    FVariable d("d", "array", &v);
-
-    d.Print();
-
-    return 0;*/
     if (!Node) return 0;
     if (Node->Token.TokenType == ETokenType::Operator) // check operands
     {
@@ -1254,6 +1246,17 @@ int PyAnalyzer::SemanticCheck(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<
             // в приинципе можно все 
         }
         else if (Node->Token.ValueName == "range")
+        {
+            if (!Node->Parent.lock() 
+                || !Node->Parent.lock()->Parent.lock()
+                || Node->Parent.lock()->Token.ValueName != "in"
+                || Node->Parent.lock()->Parent.lock()->Token.ValueName != "for")
+            {
+                Errors.push_back(Error("Incorrect use of function 'range' : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return 1;
+            }
+        }
+        else if (Node->Token.ValueName == "type")
         {
 
         }
@@ -1326,6 +1329,200 @@ int PyAnalyzer::GetNumberType(const std::string& val)
     return 0;
 }
 
+int PyAnalyzer::Execute()
+{
+    return ExecScope(SyntaxTree, 0);
+}
+
+int PyAnalyzer::ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id)
+{
+    for (int i = 0; i < Scope->Children.size(); i++)
+    {
+        auto T = Scope->Children[i]->Token;
+        if (T.TokenType == ETokenType::Operator)
+        {
+            if (AssigmentOperators.count(T.ValueName))
+            {
+
+            }
+        }
+    }
+
+    auto tmp = Vars;
+    Vars.clear();
+
+    for (auto i : tmp)
+    {
+        if (i.second.Scope != scope_id)
+            Vars[i.first] = i.second;
+    }
+    return 0;
+}
+
+PyAnalyzer::FVariable PyAnalyzer::ExecExpr(std::shared_ptr<SyntaxNode> Node)
+{
+    if (Node->Token.TokenType == ETokenType::Literal)
+    {
+        return FVariable("", "string", &Node->Token.ValueName);
+    }
+
+    if (Node->Token.TokenType == ETokenType::Number)
+    {
+        return GetNumFromString(Node->Token.ValueName);
+    }
+
+    if (Node->Token.TokenType == ETokenType::Variable)
+    {
+        // array check
+        return Vars[Node->Token.ValueName];
+    }
+
+    if (Node->Token.TokenType == ETokenType::Function)
+    {
+        return ExecFunction(Node);
+    }
+
+    if (Node->Token.TokenType == ETokenType::Operator)
+    {
+        auto l = ExecExpr(Node->Children[0]);
+        auto r = ExecExpr(Node->Children[1]);
+        if (l.Type == "" || r.Type == "")
+        {
+            if (!(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
+                Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex);
+            return FVariable();
+        }
+        return ExecOperation(Node->Token.ValueName, l, r);
+    }
+}
+
+PyAnalyzer::FVariable PyAnalyzer::ExecFunction(std::shared_ptr<SyntaxNode> Node)
+{
+    return FVariable();
+}
+
+PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVariable r)
+{
+
+    if ((l.Type == "string"
+        && r.Type != "string")
+        || (l.Type != "string"
+            && r.Type == "string"))
+    {
+        Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+        return FVariable();
+    }
+
+    if (l.Type == "array")
+    {
+        Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+        return FVariable();
+    }
+
+    if (l.Type == "array"
+        && r.Type == "array")
+    {
+        Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+        return FVariable();
+    }
+
+    if (r.Type == "array")
+    {
+        if (op != "in")
+        {
+            Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+            return FVariable();
+        }
+
+        std::vector<FVariable> array = *reinterpret_cast<std::vector<FVariable>*>(r.Value);
+        for (auto i : array)
+        {
+            FVariable res = ExecOperation("==", l, i);
+            if (res.Type == "") return res;
+            int isIn = *reinterpret_cast<int*>(res.Value);
+            if (isIn)
+                return res;
+        }
+        return FVariable("", "int", new int(0));        
+    }
+
+    std::string type = l.Type;
+
+    if (type == "int") {
+        int lval = *(int*)l.Value;
+        int rval = *(int*)r.Value;
+
+        if (op == "+") {
+            int result = lval + rval;
+            return FVariable("", "int", new int(result));
+        }
+        else if (op == "-") {
+            int result = lval - rval;
+            return FVariable("", "int", new int(result));
+        }
+        else if (op == "*") {
+            int result = lval * rval;
+            return FVariable("", "int", new int(result));
+        }
+        else if (op == "/") {
+            int result = lval / rval;
+            return FVariable("", "int", new int(result));
+        }
+        else if (op == "%") {
+            int result = lval % rval;
+            return FVariable("", "int", new int(result));
+        }
+        else if (op == "<") {
+            bool result = lval < rval;
+            return FVariable("", "bool", new bool(result));
+        }
+        else if (op == ">") {
+            bool result = lval > rval;
+            return FVariable("", "bool", new bool(result));
+        }
+        else if (op == "==") {
+            bool result = lval == rval;
+            return FVariable("", "bool", new bool(result));
+        }
+        else if (op == "!=") {
+            bool result = lval != rval;
+            return FVariable("", "bool", new bool(result));
+        }
+        else {
+            throw std::invalid_argument("Unsupported operator for type int");
+        }
+    }
+}
+
+PyAnalyzer::FVariable PyAnalyzer::GetNumFromString(const std::string& val)
+{
+    try {
+        // Try parsing as integer
+        int value = std::stoi(val);
+        return  FVariable("", "int", new int(value));
+    }
+    catch (std::invalid_argument&) {}
+
+    try {
+        // Try parsing as float
+        float value = std::stof(val);
+        return  FVariable("", "float", new float(value));
+    }
+    catch (std::invalid_argument&) {}
+
+    try {
+        // Try parsing as complex number
+        std::complex<float> value = std::stof(val);
+        return  FVariable("", "complex", new std::complex<float>(value));
+    }
+    catch (std::invalid_argument&) {}
+
+    Errors.push_back(Error("Incorrect number literal " + val));
+
+    // If no match is found, return a null pointer
+    return FVariable();
+}
+
 void PyAnalyzer::SyntaxNode::Print(int Depth)
 {
     std::cout << " " << std::string(std::max(0, Depth - 1), '\t') << Token.ValueName << std::endl;
@@ -1350,6 +1547,10 @@ int PyAnalyzer::FVariable::Print(bool doNewLine)
     else if (Type == "string")
     {
         std::string val = *reinterpret_cast<std::string*>(Value);
+        std::cout << val;
+    }else if (Type == "complex")
+    {
+        std::complex<float> val = *reinterpret_cast<std::complex<float>*>(Value);
         std::cout << val;
     }
     else if (Type == "array")
