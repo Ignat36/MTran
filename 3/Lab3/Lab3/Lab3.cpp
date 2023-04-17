@@ -3,6 +3,8 @@
 #include <vector>
 #include <fstream>
 
+#include <complex>
+
 #include "Analyzer.h"
 
 int main()
@@ -32,7 +34,21 @@ int main()
         return 0;
     }
 
-    Analyzer.PrintSyntaxTree();
+    std::complex<float> a = 1;
+    std::complex<float> b = 1.1;
+    std::complex<float> c = 1.00900000009991;
+
+    void* as = &a;
+    void* bs = &b;
+    void* cs = &c;
+    
+    std::complex<float> ar = *reinterpret_cast<std::complex<float>*>(as);
+    std::complex<float> br = *reinterpret_cast<std::complex<float>*>(bs);
+    std::complex<float> cr = *reinterpret_cast<std::complex<float>*>(cs);
+
+    std::cout << ar + br + cr;
+
+    //Analyzer.PrintSyntaxTree();
     
     return 0;
 }

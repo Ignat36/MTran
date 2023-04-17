@@ -161,6 +161,18 @@ private:
 	FVariable ExecOperation(std::string op, FVariable l, FVariable r);
 	FVariable GetNumFromString(const std::string& val);
 
+
+	//---------------------------------------------------------
+	//----------------FunctionsCall----------------------------
+	//---------------------------------------------------------
+	int CallPrint(std::shared_ptr<SyntaxNode> Node);
+	int CallInt(std::shared_ptr<SyntaxNode> Node);
+	int CallInput(std::shared_ptr<SyntaxNode> Node);
+	int CallFloat(std::shared_ptr<SyntaxNode> Node);
+	int CallArray(std::shared_ptr<SyntaxNode> Node);
+	int CallType(std::shared_ptr<SyntaxNode> Node);
+	int CallString(std::shared_ptr<SyntaxNode> Node);
+
 private:
 
 	std::unordered_set<std::string> TokenVariables;
@@ -179,9 +191,9 @@ private:
 
 	const std::unordered_set<std::string> Keywords = {
 		"as", "assert", "break", "class", "continue", "def", "del", "elif",
-		"else", "except", "False", "finally", "for", "from", "global", "if", "import",
+		"else", "except", "finally", "for", "from", "global", "if", "import",
 		"lambda", "None", "nonlocal", "pass", "raise",
-		"return", "True", "try", "while", "with", "yield"
+		"return", "try", "while", "with", "yield"
 	};
 
 	const std::unordered_set<std::string> BuiltinFunctions = {
@@ -196,8 +208,12 @@ private:
 	};
 
 	const std::unordered_set<std::string> BuiltinTypes = {
-		"bool", "bytearray", "bytes", "complex", "dict", "float", "frozenset", "int",
+		"bytearray", "bytes", "complex", "dict", "float", "frozenset", "int",
 		"list", "set", "str", "tuple"
+	};
+
+	const std::unordered_set<std::string> BuiltinNumeric = {
+		"complex",  "float", "int"
 	};
 
 	const std::unordered_set<std::string> GoodTokensAfterLiteral = {

@@ -1280,10 +1280,6 @@ int PyAnalyzer::SemanticCheck(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<
         {
 
         }
-        else if (Node->Token.ValueName == "char")
-        {
-
-        }
 
     }
     else if (Node->Token.TokenType == ETokenType::Variable) // check [] operator
@@ -1343,7 +1339,14 @@ int PyAnalyzer::ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id)
         {
             if (AssigmentOperators.count(T.ValueName))
             {
-
+                std::string VarName = Scope->Children[i]->Children[0]->Token.ValueName;
+                Vars[VarName] = ExecExpr(Scope->Children[i]->Children[1]);
+                if (Vars[VarName].Type == "") return 1;
+            }
+            else
+            {
+                auto check = ExecExpr(Scope->Children[i]->Children[1]);
+                if (check.Type == "") return 1;
             }
         }
     }
@@ -1388,7 +1391,7 @@ PyAnalyzer::FVariable PyAnalyzer::ExecExpr(std::shared_ptr<SyntaxNode> Node)
         auto r = ExecExpr(Node->Children[1]);
         if (l.Type == "" || r.Type == "")
         {
-            if (!(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
+            if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
                 Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex);
             return FVariable();
         }
@@ -1413,14 +1416,64 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
         return FVariable();
     }
 
-    if (l.Type == "array")
+    if (l.Type == "array"
+        && r.Type == "array" 
+        && op != "=="
+        && op != "!=")
     {
-        Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
-        return FVariable();
+        if (op != "=="
+            && op != "!=")
+        {
+            Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+            return FVariable();
+        }
+
+        if (   op == "=="
+            || op == "!=")
+        {
+            std::vector<FVariable> larray = *reinterpret_cast<std::vector<FVariable>*>(l.Value);
+            std::vector<FVariable> rarray = *reinterpret_cast<std::vector<FVariable>*>(r.Value);
+
+            if (larray.size() != rarray.size())
+            {
+                if (op == "==")
+                    return FVariable("", "int", new int(0));
+                else
+                    return FVariable("", "int", new int(1));
+            }
+
+            for (int i = 0; i < larray.size(); i++)
+            {
+                FVariable res = ExecOperation(op, larray[i], rarray[i]);
+                if (res.Type == "") { Errors.clear(); }
+                if (op == "==")
+                {
+                    if (res.Type == "")
+                        return FVariable("", "int", new int(0));
+                    int isEq = *reinterpret_cast<int*>(res.Value);
+                    if (!isEq)
+                        return FVariable("", "int", new int(0));
+                }
+                else
+                {
+                    if (res.Type == "")
+                        return FVariable("", "int", new int(1));
+                    int isnEq = *reinterpret_cast<int*>(res.Value);
+                    if (isnEq)
+                        return FVariable("", "int", new int(1));
+                }
+                
+                int isIn = *reinterpret_cast<int*>(res.Value);
+                if (isIn)
+                    return res;
+            }
+
+            return FVariable("", "int", new int(1));
+        }
+
     }
 
-    if (l.Type == "array"
-        && r.Type == "array")
+    if (l.Type == "array")
     {
         Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
         return FVariable();
@@ -1438,13 +1491,137 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
         for (auto i : array)
         {
             FVariable res = ExecOperation("==", l, i);
-            if (res.Type == "") return res;
+            if (res.Type == "") { Errors.clear(); continue; }
             int isIn = *reinterpret_cast<int*>(res.Value);
             if (isIn)
                 return res;
         }
         return FVariable("", "int", new int(0));        
     }
+
+    if (BuiltinNumeric.count(l.Type) && BuiltinNumeric.count(r.Type))
+    {
+        std::complex<float> lval = *reinterpret_cast<std::complex<float>*>(l.Value);
+        std::complex<float> rval = *reinterpret_cast<std::complex<float>*>(r.Value);
+        std::complex<float> res;
+        std::string returnType = "";
+
+        if (op == "+") {
+            res = lval + rval;
+        }
+        else if (op == "-") {
+            res = lval - rval;
+        }
+        else if (op == "*") {
+            res = lval * rval;
+        }
+        else if (op == "/") {
+            res = lval / rval;
+        }
+        else if (op == "%") {
+            if (!(l.Type == "int" && r.Type == "int"))
+            {
+                Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | mod operation only applyable to integers"));
+                return FVariable();
+            }
+            int lval = *reinterpret_cast<int*>(l.Value);
+            int rval = *reinterpret_cast<int*>(r.Value);
+            res = lval % rval;
+        }
+        else if (op == "<") {
+
+            if (l.Type == "complex" || r.Type == "complex")
+            {
+                Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | complex numbers are uncompareable"));
+                return FVariable();
+            }
+            float lval = *reinterpret_cast<float*>(l.Value);
+            float rval = *reinterpret_cast<float*>(r.Value);
+            res = lval < rval;
+            returnType = "int";
+        }
+        else if (op == ">") {
+            if (l.Type == "complex" || r.Type == "complex")
+            {
+                Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | complex numbers are uncompareable"));
+                return FVariable();
+            }
+            float lval = *reinterpret_cast<float*>(l.Value);
+            float rval = *reinterpret_cast<float*>(r.Value);
+            res = lval > rval;
+            returnType = "int";
+        }
+        else if (op == "<=") {
+
+            if (l.Type == "complex" || r.Type == "complex")
+            {
+                Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | complex numbers are uncompareable"));
+                return FVariable();
+            }
+            float lval = *reinterpret_cast<float*>(l.Value);
+            float rval = *reinterpret_cast<float*>(r.Value);
+            res = lval <= rval;
+            returnType = "int";
+        }
+        else if (op == ">=") {
+            if (l.Type == "complex" || r.Type == "complex")
+            {
+                Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | complex numbers are uncompareable"));
+                return FVariable();
+            }
+            float lval = *reinterpret_cast<float*>(l.Value);
+            float rval = *reinterpret_cast<float*>(r.Value);
+            res = lval >= rval;
+            returnType = "int";
+        }
+        else if (op == "==") {
+            res = lval == rval;
+            returnType = "int";
+        }
+        else if (op == "!=") {
+            res = lval != rval;
+            returnType = "int";
+        }
+        else {
+            throw std::invalid_argument("Unsupported operator for type int");
+        }
+
+        if (returnType == "")
+        {
+            if (l.Type == "complex" || r.Type == "complex")
+            {
+                returnType = "complex";
+            }
+            else if (l.Type == "float" || r.Type == "float")
+            {
+                returnType = "float";
+            }
+            else if (l.Type == "int" || r.Type == "int")
+            {
+                returnType = "int";
+            }
+        }
+
+        if (returnType == "complex")
+        {
+            return FVariable("", returnType, new std::complex<float>(res));
+        }
+        else if (returnType == "float")
+        {
+            return FVariable("", returnType, new float(res.real()));
+        }
+        else if (returnType == "int")
+        {
+            return FVariable("", returnType, new int(res.real()));
+        }
+        else
+        {
+            Errors.push_back(Error("Invalid numeric type"));
+            return FVariable();
+        }
+    }
+
+    
 
     std::string type = l.Type;
 

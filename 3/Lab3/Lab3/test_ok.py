@@ -4,7 +4,7 @@ factorial = 2 + (2 * 2) + 2
 a = 1
 b = 2
 c = 3 
-arr = [a, 1 - (45 ** int(input(b + (c-int()), 4 - 10))), a, 4 * 9, c - 5]
+arr = [a, 1 - (45 ** int(float(b + (c-int()), 4 - 10))), a, 4 * 9, c - 5]
 print(a)
 print(b)
 print(c)
