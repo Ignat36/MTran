@@ -1,4 +1,4 @@
-a = 3
+a = 3 + 4
 num = int(input("Enter a number: ")) + int(input("Enter a number: "))
 factorial = 2 + (2 * 2) + 2
 a = 1

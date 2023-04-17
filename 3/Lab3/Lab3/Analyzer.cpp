@@ -1342,6 +1342,7 @@ int PyAnalyzer::ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id)
                 std::string VarName = Scope->Children[i]->Children[0]->Token.ValueName;
                 Vars[VarName] = ExecExpr(Scope->Children[i]->Children[1]);
                 if (Vars[VarName].Type == "") return 1;
+                if (Vars[VarName].Scope < 0) Vars[VarName].Scope = scope_id;
             }
             else
             {
@@ -1349,7 +1350,21 @@ int PyAnalyzer::ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id)
                 if (check.Type == "") return 1;
             }
         }
+        else if (T.TokenType == ETokenType::Function)
+        {
+            FVariable tmp = ExecFunction(Scope->Children[i]);
+            if (tmp.Type == "") return 1;
+        }
+        else if (T.TokenType == ETokenType::KeyWord)
+        {
+            
+        }
+        
     }
+
+    //////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////   Clear Scope  //////////////////////////
+    //////////////////////////////////////////////////////////////////////////
 
     auto tmp = Vars;
     Vars.clear();
@@ -1376,7 +1391,29 @@ PyAnalyzer::FVariable PyAnalyzer::ExecExpr(std::shared_ptr<SyntaxNode> Node)
 
     if (Node->Token.TokenType == ETokenType::Variable)
     {
-        // array check
+        if (Node->Children.size())
+        {
+            auto index = ExecExpr(Node->Children[0]);
+
+            if (index.Type == "")
+            {
+                if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
+                    Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex);
+                return FVariable();
+            }
+
+            if (index.Type != "int")
+            {
+                Errors.push_back(Error("Incorrect index type, expected 'int', but found : " + index.Type + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return FVariable();
+            }
+
+            std::vector<FVariable> Varr = *reinterpret_cast<std::vector<FVariable>*>(Vars[Node->Token.ValueName].Value);
+            int id = *reinterpret_cast<int*>(index.Value);
+            return Varr[id];
+   
+        }
+
         return Vars[Node->Token.ValueName];
     }
 
@@ -1497,6 +1534,53 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
                 return res;
         }
         return FVariable("", "int", new int(0));        
+    }
+
+    if (l.Type == "string" && r.Type == "string")
+    {
+        std::string lval = *reinterpret_cast<std::string*>(l.Value);
+        std::string rval = *reinterpret_cast<std::string*>(r.Value);
+
+        if (op == "+") {
+            return FVariable("", "string", new std::string(lval + rval));
+        }
+        else if (op == "-") {
+            Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+            return FVariable();
+        }
+        else if (op == "*") {
+            Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+            return FVariable();
+        }
+        else if (op == "/") {
+            Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+            return FVariable();
+        }
+        else if (op == "%") {
+            Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type));
+            return FVariable();
+        }
+        else if (op == "<") {
+            return FVariable("", "int", new int(lval < rval));
+        }
+        else if (op == ">") {
+            return FVariable("", "int", new int(lval > rval));
+        }
+        else if (op == "<=") {
+            return FVariable("", "int", new int(lval <= rval));
+        }
+        else if (op == ">=") {
+            return FVariable("", "int", new int(lval >= rval));
+        }
+        else if (op == "==") {
+            return FVariable("", "int", new int(lval == rval));
+        }
+        else if (op == "!=") {
+            return FVariable("", "int", new int(lval != rval));
+        }
+        else {
+            throw std::invalid_argument("Unsupported operator for type int");
+        }
     }
 
     if (BuiltinNumeric.count(l.Type) && BuiltinNumeric.count(r.Type))
@@ -1622,53 +1706,6 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
     }
 
     
-
-    std::string type = l.Type;
-
-    if (type == "int") {
-        int lval = *(int*)l.Value;
-        int rval = *(int*)r.Value;
-
-        if (op == "+") {
-            int result = lval + rval;
-            return FVariable("", "int", new int(result));
-        }
-        else if (op == "-") {
-            int result = lval - rval;
-            return FVariable("", "int", new int(result));
-        }
-        else if (op == "*") {
-            int result = lval * rval;
-            return FVariable("", "int", new int(result));
-        }
-        else if (op == "/") {
-            int result = lval / rval;
-            return FVariable("", "int", new int(result));
-        }
-        else if (op == "%") {
-            int result = lval % rval;
-            return FVariable("", "int", new int(result));
-        }
-        else if (op == "<") {
-            bool result = lval < rval;
-            return FVariable("", "bool", new bool(result));
-        }
-        else if (op == ">") {
-            bool result = lval > rval;
-            return FVariable("", "bool", new bool(result));
-        }
-        else if (op == "==") {
-            bool result = lval == rval;
-            return FVariable("", "bool", new bool(result));
-        }
-        else if (op == "!=") {
-            bool result = lval != rval;
-            return FVariable("", "bool", new bool(result));
-        }
-        else {
-            throw std::invalid_argument("Unsupported operator for type int");
-        }
-    }
 }
 
 PyAnalyzer::FVariable PyAnalyzer::GetNumFromString(const std::string& val)

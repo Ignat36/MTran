@@ -42,9 +42,9 @@ private:
 		void* Value;
 
 		FVariable(std::string _Name, std::string _Type, void* _Value)
-			: Name(_Name), Type(_Type), Value(_Value), Scope(0) {}
+			: Name(_Name), Type(_Type), Value(_Value), Scope(-1) {}
 
-		FVariable() : Type("") {}
+		FVariable() : Type(""), Scope(-2) {}
 
 		int Print(bool doNewLine = true);
 	};
@@ -156,6 +156,7 @@ private:
 	//---------------------------------------------------------
 	int Execute();
 	int ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id);
+
 	FVariable ExecExpr(std::shared_ptr<SyntaxNode> Node);
 	FVariable ExecFunction(std::shared_ptr<SyntaxNode> Node);
 	FVariable ExecOperation(std::string op, FVariable l, FVariable r);
