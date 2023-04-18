@@ -156,6 +156,8 @@ private:
 	//---------------------------------------------------------
 	int Execute();
 	int ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id);
+	int ExecFor(std::shared_ptr<SyntaxNode> Scope, int scope_id);
+	int ExecWhile(std::shared_ptr<SyntaxNode> Scope, int scope_id);
 
 	FVariable ExecExpr(std::shared_ptr<SyntaxNode> Node);
 	FVariable ExecFunction(std::shared_ptr<SyntaxNode> Node);
@@ -166,13 +168,17 @@ private:
 	//---------------------------------------------------------
 	//----------------FunctionsCall----------------------------
 	//---------------------------------------------------------
-	int CallPrint(std::shared_ptr<SyntaxNode> Node);
-	int CallInt(std::shared_ptr<SyntaxNode> Node);
-	int CallInput(std::shared_ptr<SyntaxNode> Node);
-	int CallFloat(std::shared_ptr<SyntaxNode> Node);
-	int CallArray(std::shared_ptr<SyntaxNode> Node);
-	int CallType(std::shared_ptr<SyntaxNode> Node);
-	int CallString(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallPrint(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallInt(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallInput(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallFloat(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallArray(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallArrayAppend(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallArrayPopBack(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallType(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallString(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallComplex(std::shared_ptr<SyntaxNode> Node);
+	std::pair<int, int> ExecRange(std::shared_ptr<SyntaxNode> Node);
 
 private:
 
@@ -205,12 +211,12 @@ private:
 		"issubclass", "iter", "len", "list", "locals", "map", "max", "memoryview", "min",
 		"next", "object", "oct", "open", "ord", "pow", "print", "property", "range",
 		"repr", "reversed", "round", "set", "setattr", "slice", "sorted", "staticmethod",
-		"str", "sum", "super", "tuple", "type", "vars", "zip", "string"
+		"string", "sum", "super", "tuple", "type", "vars", "zip", "array", "append", "pop_back"
 	};
 
 	const std::unordered_set<std::string> BuiltinTypes = {
 		"bytearray", "bytes", "complex", "dict", "float", "frozenset", "int",
-		"list", "set", "str", "tuple"
+		"list", "set", "string", "tuple", "array"
 	};
 
 	const std::unordered_set<std::string> BuiltinNumeric = {
