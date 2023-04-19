@@ -34,7 +34,7 @@ int main()
         return 0;
     }
 
-    Analyzer.PrintSyntaxTree();
+    //Analyzer.PrintSyntaxTree();
     
     return 0;
 }

@@ -1,14 +1,23 @@
+a = [1, 2, 3, 4]
+a[0] = 25
+if 2 in a:
+	print(1)
+a = 1
+print(a)
 a_b = 3 + 4
+print(a_b)
 num = int(input("Enter a number: ")) + int(input("Enter a number: "))
 factorial = 2 + (2 * 2) + 2
 a = 1
 b = 2
 c = 3 
-arr = [a, 1 - (45 ** int(float(b + (c-int(3.4 + 2j))))), a, 4 * 9, c - 5]
+print(a_b)
 print(a)
 print(b)
 print(c)
-arr[1] = 4
+print(num)
+print(factorial)
+arr = [a + 2, 1 - (45 * int(float(b + (c-int(3.4 + 2j))))), a, 4 * 9, c - 5]
 if c in arr:
 	print(1)
 if b in [1, 2, 4, 7, 8]:
@@ -20,4 +29,4 @@ elif num == 0:
 else:
 	for i in range(1,num):
 		factorial = factorial*i
-	print("The factorial of", num, "is", factorial)
+	print("The factorial of ", num, " is ", factorial)

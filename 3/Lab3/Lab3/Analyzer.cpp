@@ -24,7 +24,7 @@ int PyAnalyzer::Analyze()
     ReformatSyntaxTree(); if (Errors.size()) return 1;
     checkSyntaxTree(); if (Errors.size()) return 1;
     SemanticAnalisis(); if (Errors.size()) return 1;
-    //Execute(); if (Errors.size()) return 1;
+    Execute(); if (Errors.size()) return 1;
     return 0;;
 }
 
@@ -1390,9 +1390,52 @@ int PyAnalyzer::ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id)
             if (AssigmentOperators.count(T.ValueName))
             {
                 std::string VarName = Scope->Children[i]->Children[0]->Token.ValueName;
-                Vars[VarName] = ExecExpr(Scope->Children[i]->Children[1]);
-                if (Vars[VarName].Type == "") return 1;
-                if (Vars[VarName].Scope < 0) Vars[VarName].Scope = scope_id;
+
+                if (Scope->Children[i]->Children[0]->Children.size())
+                {
+                    std::vector<FVariable>* Varr = reinterpret_cast<std::vector<FVariable>*>(Vars[VarName].Value);
+                    auto index = ExecExpr(Scope->Children[i]->Children[0]->Children[0]);
+                    
+                    if (index.Type == "")
+                    {
+                        if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
+                            Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex);
+                        return 1;
+                    }
+
+                    if (index.Type != "int")
+                    {
+                        Errors.push_back(Error("Incorrect index type, expected 'int', but found : " + index.Type + " at | " + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex)));
+                        return 1;
+                    }
+
+                    int id = *reinterpret_cast<int*>(index.Value);
+                    if (id < 0 || id > Varr->size() - 1)
+                    {
+                        Errors.push_back(Error("Index out of bounds at | " + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex)));
+                        return 1;
+                    }
+
+                    Varr->at(id) = ExecExpr(Scope->Children[i]->Children[1]);
+                    if (Varr->at(id).Type == "") return 1;
+                    Vars[VarName].Value = Varr;
+                }
+                else
+                {
+                    if (Vars.find(VarName) == Vars.end())
+                    {
+                        Vars[VarName] = ExecExpr(Scope->Children[i]->Children[1]);
+                        if (Vars[VarName].Type == "") return 1;
+                        Vars[VarName].Scope = scope_id;
+                    }
+                    else
+                    {
+                        auto exp = ExecExpr(Scope->Children[i]->Children[1]);
+                        if (exp.Type == "") return 1;
+                        Vars[VarName].Value = exp.Value;
+                        Vars[VarName].Type = exp.Type;
+                    }
+                }
             }
             else 
             {
@@ -1784,7 +1827,6 @@ PyAnalyzer::FVariable PyAnalyzer::ExecExpr(std::shared_ptr<SyntaxNode> Node)
             std::vector<FVariable> Varr = *reinterpret_cast<std::vector<FVariable>*>(Vars[Node->Token.ValueName].Value);
             int id = *reinterpret_cast<int*>(index.Value);
             return Varr[id];
-   
         }
 
         return Vars[Node->Token.ValueName];
@@ -1799,6 +1841,7 @@ PyAnalyzer::FVariable PyAnalyzer::ExecExpr(std::shared_ptr<SyntaxNode> Node)
     {
         auto l = ExecExpr(Node->Children[0]);
         auto r = ExecExpr(Node->Children[1]);
+
         if (l.Type == "" || r.Type == "")
         {
             if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
@@ -1811,10 +1854,6 @@ PyAnalyzer::FVariable PyAnalyzer::ExecExpr(std::shared_ptr<SyntaxNode> Node)
 
 PyAnalyzer::FVariable PyAnalyzer::ExecFunction(std::shared_ptr<SyntaxNode> Node)
 {
-    auto var = CallArray(Node);
-    if (var.Type == "") return FVariable();
-    std::vector<FVariable> args = *reinterpret_cast<std::vector<FVariable>*>(var.Value);
-
     if (Node->Token.ValueName == "print")
     {
         return CallPrint(Node);
@@ -2015,10 +2054,18 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
 
     if (BuiltinNumeric.count(l.Type) && BuiltinNumeric.count(r.Type))
     {
-        std::complex<float> lval = *reinterpret_cast<std::complex<float>*>(l.Value);
-        std::complex<float> rval = *reinterpret_cast<std::complex<float>*>(r.Value);
+        std::complex<float> lval; 
+        std::complex<float> rval; 
         std::complex<float> res;
         std::string returnType = "";
+
+        if (l.Type == "complex") { lval = *reinterpret_cast<std::complex<float>*>(l.Value); }
+        else if (l.Type == "float") { lval = *reinterpret_cast<float*>(l.Value); }
+        else if (l.Type == "int") { lval = *reinterpret_cast<int*>(l.Value); }
+
+        if (r.Type == "complex") { rval = *reinterpret_cast<std::complex<float>*>(r.Value); }
+        else if (r.Type == "float") { rval = *reinterpret_cast<float*>(r.Value); }
+        else if (r.Type == "int") { rval = *reinterpret_cast<int*>(r.Value); }
 
         if (op == "+") {
             res = lval + rval;
@@ -2038,9 +2085,7 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
                 Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | mod operation only applyable to integers"));
                 return FVariable();
             }
-            int lval = *reinterpret_cast<int*>(l.Value);
-            int rval = *reinterpret_cast<int*>(r.Value);
-            res = lval % rval;
+            res = int(lval.real()) % int(rval.real());
         }
         else if (op == "<") {
 
@@ -2049,9 +2094,7 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
                 Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | complex numbers are uncompareable"));
                 return FVariable();
             }
-            float lval = *reinterpret_cast<float*>(l.Value);
-            float rval = *reinterpret_cast<float*>(r.Value);
-            res = lval < rval;
+            res = lval.real() < rval.real();
             returnType = "int";
         }
         else if (op == ">") {
@@ -2060,9 +2103,7 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
                 Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | complex numbers are uncompareable"));
                 return FVariable();
             }
-            float lval = *reinterpret_cast<float*>(l.Value);
-            float rval = *reinterpret_cast<float*>(r.Value);
-            res = lval > rval;
+            res = lval.real() > rval.real();
             returnType = "int";
         }
         else if (op == "<=") {
@@ -2072,9 +2113,7 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
                 Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | complex numbers are uncompareable"));
                 return FVariable();
             }
-            float lval = *reinterpret_cast<float*>(l.Value);
-            float rval = *reinterpret_cast<float*>(r.Value);
-            res = lval <= rval;
+            res = lval.real() <= rval.real();
             returnType = "int";
         }
         else if (op == ">=") {
@@ -2083,9 +2122,7 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
                 Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | complex numbers are uncompareable"));
                 return FVariable();
             }
-            float lval = *reinterpret_cast<float*>(l.Value);
-            float rval = *reinterpret_cast<float*>(r.Value);
-            res = lval >= rval;
+            lval.real() >= rval.real();
             returnType = "int";
         }
         else if (op == "==") {
@@ -2095,6 +2132,10 @@ PyAnalyzer::FVariable PyAnalyzer::ExecOperation(std::string op, FVariable l, FVa
         else if (op == "!=") {
             res = lval != rval;
             returnType = "int";
+        }
+        else if (op == "in") {
+            Errors.push_back(Error("Can't execute " + l.Type + " " + op + " " + r.Type + " | numbers can't be included"));
+            return FVariable();
         }
         else {
             throw std::invalid_argument("Unsupported operator for type int");
@@ -2317,14 +2358,14 @@ PyAnalyzer::FVariable PyAnalyzer::CallFloat(std::shared_ptr<SyntaxNode> Node)
 
 PyAnalyzer::FVariable PyAnalyzer::CallArray(std::shared_ptr<SyntaxNode> Node)
 {
-    std::vector<FVariable> arr;
+    std::vector<FVariable>* arr = new std::vector<FVariable>();
     for (auto i : Node->Children)
     {
         auto var = ExecExpr(i);
         if (var.Type == "") return FVariable();
-        arr.push_back(var);
+        arr->push_back(var);
     }
-    return FVariable("", "array", new std::vector<FVariable>(arr));
+    return FVariable("", "array", arr);
 }
 
 PyAnalyzer::FVariable PyAnalyzer::CallType(std::shared_ptr<SyntaxNode> Node)
