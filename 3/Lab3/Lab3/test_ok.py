@@ -1,3 +1,11 @@
+ar2 = [1, -4, 5, -5, 23]
+print(ar2)
+
+pop_back(ar2)
+i = 0
+while i < len(ar2):
+	print(ar2[i])
+	i = i + 1
 a = [1, 2, 3, 4]
 a[0] = 25
 if 2 in a:
@@ -27,6 +35,8 @@ if (num < 0):
 elif num == 0:
 	print(("The factorial of 0 is 1"))
 else:
+	factorial = 1
 	for i in range(1,num):
-		factorial = factorial*i
-	print("The factorial of ", num, " is ", factorial)
+		factorial = factorial * i
+	print("The factorial of ", num, " is ", factorial )
+

@@ -1328,6 +1328,14 @@ int PyAnalyzer::SemanticCheck(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<
                 return 1;
             }
         }
+        else if (Node->Token.ValueName == "len")
+        {
+            if (Node->Children.size() != 1)
+            {
+                Errors.push_back(Error("Expected one argument in function 'size' : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return 1;
+            }
+        }
 
     }
     else if (Node->Token.TokenType == ETokenType::Variable) // check [] operator
@@ -1381,7 +1389,7 @@ int PyAnalyzer::Execute()
 int PyAnalyzer::ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id)
 {
     int i = 0;
-    if (Scope->Token.TokenType == ETokenType::KeyWord) i++;
+    if (Scope->Token.TokenType == ETokenType::KeyWord && Scope->Token.ValueName != "else") i++;
     for (; i < Scope->Children.size(); i++)
     {
         auto T = Scope->Children[i]->Token;
@@ -1524,7 +1532,7 @@ int PyAnalyzer::ExecScope(std::shared_ptr<SyntaxNode> Scope, int scope_id)
 int PyAnalyzer::ExecFor(std::shared_ptr<SyntaxNode> Scope, int scope_id)
 {
     int iterc = 0;
-    std::string VarName = Scope->Children[0]->Children[0]->Token.ValueName;
+    std::string iVarName = Scope->Children[0]->Children[0]->Token.ValueName;
     std::pair<int, int> rng;
     std::vector<FVariable> arr;
 
@@ -1533,19 +1541,20 @@ int PyAnalyzer::ExecFor(std::shared_ptr<SyntaxNode> Scope, int scope_id)
         rng = ExecRange(Scope->Children[0]->Children[1]);
         if (rng.second == -1) return 1;
         
-        if (Vars.find(VarName) != Vars.end())
+        if (Vars.find(iVarName) != Vars.end())
         {
-            Vars[VarName].Value = new int(rng.first + iterc);
+            Vars[iVarName].Value = new int(rng.first + iterc);
+            Vars[iVarName].Type = "int";
         }
         else
         {
-            Vars[VarName] = FVariable("", "int", new int(rng.first + iterc));
-            Vars[VarName].Scope = scope_id;
+            Vars[iVarName] = FVariable("", "int", new int(rng.first + iterc));
+            Vars[iVarName].Scope = scope_id;
         }
     }
     else
     {
-        auto exp = CallArray(Scope->Children[0]->Children[1]);
+        auto exp = ExecExpr(Scope->Children[0]->Children[1]);
         if (Scope->Children[0]->Children[1]->Token.ValueName == "[]") exp.Scope = scope_id;
         if (exp.Type == "") return 1;
         if (exp.Type != "array")
@@ -1556,9 +1565,9 @@ int PyAnalyzer::ExecFor(std::shared_ptr<SyntaxNode> Scope, int scope_id)
         arr = *reinterpret_cast<std::vector<FVariable>*>(exp.Value);
 
         
-        if (Vars.find(VarName) == Vars.end())
+        if (Vars.find(iVarName) == Vars.end())
         {
-            Vars[VarName].Scope = scope_id;
+            Vars[iVarName].Scope = scope_id;
         }
     }
 
@@ -1568,13 +1577,14 @@ int PyAnalyzer::ExecFor(std::shared_ptr<SyntaxNode> Scope, int scope_id)
         if (Scope->Children[0]->Children[1]->Token.ValueName == "range")
         {
             if (rng.first + iterc > rng.second) break;
-            Vars[VarName].Value = new int(rng.first + iterc);
+            Vars[iVarName].Value = new int(rng.first + iterc);
+            Vars[iVarName].Type = "int";
         }
         else
         {
             if (iterc >= arr.size()) break;
-            Vars[VarName].Value = arr[iterc].Value;
-            Vars[VarName].Type = arr[iterc].Type;
+            Vars[iVarName].Value = arr[iterc].Value;
+            Vars[iVarName].Type = arr[iterc].Type;
         }
 
         iterc++;
@@ -1587,9 +1597,52 @@ int PyAnalyzer::ExecFor(std::shared_ptr<SyntaxNode> Scope, int scope_id)
                 if (AssigmentOperators.count(T.ValueName))
                 {
                     std::string VarName = Scope->Children[i]->Children[0]->Token.ValueName;
-                    Vars[VarName] = ExecExpr(Scope->Children[i]->Children[1]);
-                    if (Vars[VarName].Type == "") return 1;
-                    if (Vars[VarName].Scope < 0) Vars[VarName].Scope = scope_id;
+
+                    if (Scope->Children[i]->Children[0]->Children.size())
+                    {
+                        std::vector<FVariable>* Varr = reinterpret_cast<std::vector<FVariable>*>(Vars[VarName].Value);
+                        auto index = ExecExpr(Scope->Children[i]->Children[0]->Children[0]);
+
+                        if (index.Type == "")
+                        {
+                            if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
+                                Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex);
+                            return 1;
+                        }
+
+                        if (index.Type != "int")
+                        {
+                            Errors.push_back(Error("Incorrect index type, expected 'int', but found : " + index.Type + " at | " + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex)));
+                            return 1;
+                        }
+
+                        int id = *reinterpret_cast<int*>(index.Value);
+                        if (id < 0 || id > Varr->size() - 1)
+                        {
+                            Errors.push_back(Error("Index out of bounds at | " + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex)));
+                            return 1;
+                        }
+
+                        Varr->at(id) = ExecExpr(Scope->Children[i]->Children[1]);
+                        if (Varr->at(id).Type == "") return 1;
+                        Vars[VarName].Value = Varr;
+                    }
+                    else
+                    {
+                        if (Vars.find(VarName) == Vars.end())
+                        {
+                            Vars[VarName] = ExecExpr(Scope->Children[i]->Children[1]);
+                            if (Vars[VarName].Type == "") return 1;
+                            Vars[VarName].Scope = scope_id;
+                        }
+                        else
+                        {
+                            auto exp = ExecExpr(Scope->Children[i]->Children[1]);
+                            if (exp.Type == "") return 1;
+                            Vars[VarName].Value = exp.Value;
+                            Vars[VarName].Type = exp.Type;
+                        }
+                    }
                 }
                 else
                 {
@@ -1657,29 +1710,29 @@ int PyAnalyzer::ExecFor(std::shared_ptr<SyntaxNode> Scope, int scope_id)
                     }
                 }
             }
-
         }
-
-        //////////////////////////////////////////////////////////////////////////
-        ////////////////////////////////   Clear Scope  //////////////////////////
-        //////////////////////////////////////////////////////////////////////////
-
-        auto tmp = Vars;
-        Vars.clear();
-
-        for (auto i : tmp)
-        {
-            if (i.second.Scope != scope_id)
-                Vars[i.first] = i.second;
-        }
-        return 0;
+        
     }
+
+    //////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////   Clear Scope  //////////////////////////
+    //////////////////////////////////////////////////////////////////////////
+
+    auto tmp = Vars;
+    Vars.clear();
+
+    for (auto i : tmp)
+    {
+        if (i.second.Scope != scope_id)
+            Vars[i.first] = i.second;
+    }
+    return 0;
 }
 
 int PyAnalyzer::ExecWhile(std::shared_ptr<SyntaxNode> Scope, int scope_id)
 {
     
-    auto exp = ExecExpr(Scope->Children[0]->Children[0]);
+    auto exp = ExecExpr(Scope->Children[0]);
     if (exp.Type != "int")
     {
         Errors.push_back(Error("while statement mast be of bool type, but found " + exp.Type + " | at " + std::to_string(Scope->Children[0]->Token.RowIndex) + ":" + std::to_string(Scope->Children[0]->Token.ColumnIndex)));
@@ -1697,9 +1750,52 @@ int PyAnalyzer::ExecWhile(std::shared_ptr<SyntaxNode> Scope, int scope_id)
                 if (AssigmentOperators.count(T.ValueName))
                 {
                     std::string VarName = Scope->Children[i]->Children[0]->Token.ValueName;
-                    Vars[VarName] = ExecExpr(Scope->Children[i]->Children[1]);
-                    if (Vars[VarName].Type == "") return 1;
-                    if (Vars[VarName].Scope < 0) Vars[VarName].Scope = scope_id;
+
+                    if (Scope->Children[i]->Children[0]->Children.size())
+                    {
+                        std::vector<FVariable>* Varr = reinterpret_cast<std::vector<FVariable>*>(Vars[VarName].Value);
+                        auto index = ExecExpr(Scope->Children[i]->Children[0]->Children[0]);
+
+                        if (index.Type == "")
+                        {
+                            if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
+                                Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex);
+                            return 1;
+                        }
+
+                        if (index.Type != "int")
+                        {
+                            Errors.push_back(Error("Incorrect index type, expected 'int', but found : " + index.Type + " at | " + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex)));
+                            return 1;
+                        }
+
+                        int id = *reinterpret_cast<int*>(index.Value);
+                        if (id < 0 || id > Varr->size() - 1)
+                        {
+                            Errors.push_back(Error("Index out of bounds at | " + std::to_string(T.RowIndex) + ":" + std::to_string(T.ColumnIndex)));
+                            return 1;
+                        }
+
+                        Varr->at(id) = ExecExpr(Scope->Children[i]->Children[1]);
+                        if (Varr->at(id).Type == "") return 1;
+                        Vars[VarName].Value = Varr;
+                    }
+                    else
+                    {
+                        if (Vars.find(VarName) == Vars.end())
+                        {
+                            Vars[VarName] = ExecExpr(Scope->Children[i]->Children[1]);
+                            if (Vars[VarName].Type == "") return 1;
+                            Vars[VarName].Scope = scope_id;
+                        }
+                        else
+                        {
+                            auto exp = ExecExpr(Scope->Children[i]->Children[1]);
+                            if (exp.Type == "") return 1;
+                            Vars[VarName].Value = exp.Value;
+                            Vars[VarName].Type = exp.Type;
+                        }
+                    }
                 }
                 else
                 {
@@ -1769,7 +1865,7 @@ int PyAnalyzer::ExecWhile(std::shared_ptr<SyntaxNode> Scope, int scope_id)
             }
         }
 
-        exp = ExecExpr(Scope->Children[0]->Children[0]);
+        exp = ExecExpr(Scope->Children[0]);
         if (exp.Type != "int")
         {
             Errors.push_back(Error("while statement mast be of bool type, but found " + exp.Type + " | at " + std::to_string(Scope->Children[0]->Token.RowIndex) + ":" + std::to_string(Scope->Children[0]->Token.ColumnIndex)));
@@ -1826,6 +1922,11 @@ PyAnalyzer::FVariable PyAnalyzer::ExecExpr(std::shared_ptr<SyntaxNode> Node)
 
             std::vector<FVariable> Varr = *reinterpret_cast<std::vector<FVariable>*>(Vars[Node->Token.ValueName].Value);
             int id = *reinterpret_cast<int*>(index.Value);
+            if (id >= Varr.size() || id < 0)
+            {
+                Errors.push_back(Error("Index out of bounds at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                return FVariable();
+            }
             return Varr[id];
         }
 
@@ -1899,11 +2000,15 @@ PyAnalyzer::FVariable PyAnalyzer::ExecFunction(std::shared_ptr<SyntaxNode> Node)
     }
     else if (Node->Token.ValueName == "append")
     {
-        return FVariable();
+        return CallArrayAppend(Node);
     }
     else if (Node->Token.ValueName == "pop_back")
     {
-        return FVariable();
+        return CallArrayPopBack(Node);
+    }
+    else if (Node->Token.ValueName == "len")
+    {
+        return CallArraySize(Node);
     }
 
     Errors.push_back(Error("Unknown function : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
@@ -2249,7 +2354,7 @@ int PyAnalyzer::FVariable::Print(bool doNewLine)
             val[0].Print(false);
         }
 
-        for (int i = 0; i < val.size(); i++)
+        for (int i = 1; i < val.size(); i++)
         {
             std::cout << ", ";
             val[i].Print(false);
@@ -2368,6 +2473,78 @@ PyAnalyzer::FVariable PyAnalyzer::CallArray(std::shared_ptr<SyntaxNode> Node)
     return FVariable("", "array", arr);
 }
 
+PyAnalyzer::FVariable PyAnalyzer::CallArrayAppend(std::shared_ptr<SyntaxNode> Node)
+{
+    FVariable arr = ExecExpr(Node->Children[0]);
+    FVariable el = ExecExpr(Node->Children[1]);
+    if (el.Type == "" || arr.Type == "") return FVariable();
+    if (arr.Type == "array")
+    {
+        auto arr2 = reinterpret_cast<std::vector<FVariable>*>(arr.Value);
+        arr2->push_back(el);
+        return FVariable("", "int", new int(1));
+    }
+
+    Errors.push_back(Error("Incorrect size() arg type, cannot find size of : " + el.Type + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+    return FVariable();
+}
+
+PyAnalyzer::FVariable PyAnalyzer::CallArrayPopBack(std::shared_ptr<SyntaxNode> Node)
+{
+    auto el = ExecExpr(Node->Children[0]);
+    if (el.Type == "") return FVariable();
+    if (el.Type == "array")
+    {
+        auto arr = reinterpret_cast<std::vector<FVariable>*>(el.Value);
+        if (arr->size())
+        {
+            arr->pop_back();
+            return FVariable("", "int", new int(1));
+        }
+        else
+        {
+            Errors.push_back(Error("Can remove element from an empty : " + el.Type + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return FVariable();
+        }
+    }
+    else if (el.Type == "string")
+    {
+        auto str = reinterpret_cast<std::string*>(el.Value);
+        if (str->size())
+        {
+            str->pop_back();
+            return FVariable("", "int", new int(1));
+        }
+        else
+        {
+            Errors.push_back(Error("Can remove element from an empty : " + el.Type + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return FVariable();
+        }
+    }
+
+    Errors.push_back(Error("Incorrect size() arg type, cannot find size of : " + el.Type + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+    return FVariable();
+}
+
+PyAnalyzer::FVariable PyAnalyzer::CallArraySize(std::shared_ptr<SyntaxNode> Node)
+{
+    auto el = ExecExpr(Node->Children[0]);
+    if (el.Type == "") return FVariable();
+    if (el.Type == "array")
+    {
+        auto arr = reinterpret_cast<std::vector<FVariable>*>(el.Value);
+        return FVariable("", "int", new int(arr->size()));
+    }
+    else if (el.Type == "string")
+    {
+        auto str = reinterpret_cast<std::string*>(el.Value);
+        return FVariable("", "int", new int(str->size()));
+    }
+
+    Errors.push_back(Error("Incorrect size() arg type, cannot find size of : " + el.Type + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+    return FVariable();
+}
+
 PyAnalyzer::FVariable PyAnalyzer::CallType(std::shared_ptr<SyntaxNode> Node)
 {
     auto el = ExecExpr(Node->Children[0]);
@@ -2447,16 +2624,31 @@ std::pair<int, int> PyAnalyzer::ExecRange(std::shared_ptr<SyntaxNode> Node)
     if (Node->Children.size() == 1)
     {
         l = 0;
-        auto rval = CallInt(Node->Children[0]);
+        auto rval = ExecExpr(Node->Children[0]);
         if (rval.Type == "") return { -1, -1 };
-        r = *reinterpret_cast<int*>(rval.Value);
+        if (rval.Type != "int")
+        {
+            Errors.push_back(Error("Incorrect range() arg type, must be int but found : " + rval.Type + "  at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return { -1, -1 };
+        }
+        r = *reinterpret_cast<int*>(rval.Value); r--;
     }
     else
     {
-        auto lval = CallInt(Node->Children[0]);
-        auto rval = CallInt(Node->Children[1]);
+        auto lval = ExecExpr(Node->Children[0]);
+        auto rval = ExecExpr(Node->Children[1]);
         if (rval.Type == "") return { -1, -1 };
         if (lval.Type == "") return { -1, -1 };
+        if (rval.Type != "int")
+        {
+            Errors.push_back(Error("Incorrect range() arg type, must be int but found : " + rval.Type + "  at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return { -1, -1 };
+        }
+        if (lval.Type != "int")
+        {
+            Errors.push_back(Error("Incorrect range() arg type, must be int but found : " + lval.Type + "  at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+            return { -1, -1 };
+        }
         l = *reinterpret_cast<int*>(lval.Value);
         r = *reinterpret_cast<int*>(rval.Value);
     }

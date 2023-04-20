@@ -175,6 +175,7 @@ private:
 	FVariable CallArray(std::shared_ptr<SyntaxNode> Node);
 	FVariable CallArrayAppend(std::shared_ptr<SyntaxNode> Node);
 	FVariable CallArrayPopBack(std::shared_ptr<SyntaxNode> Node);
+	FVariable CallArraySize(std::shared_ptr<SyntaxNode> Node);
 	FVariable CallType(std::shared_ptr<SyntaxNode> Node);
 	FVariable CallString(std::shared_ptr<SyntaxNode> Node);
 	FVariable CallComplex(std::shared_ptr<SyntaxNode> Node);
