@@ -9,10 +9,9 @@
 
 int main()
 {
-    //std::string FileName = "sort.py";
     //std::string FileName = "test.py";
-    //std::string FileName = "sort.py";
-    std::string FileName = "test_ok.py";
+    std::string FileName = "sort.py";
+    //std::string FileName = "test_ok.py";
 
     std::ifstream FileStream; FileStream.open(FileName);
 
@@ -36,6 +35,7 @@ int main()
     }
 
     //Analyzer.PrintSyntaxTree();
+    //std::cout << "Compiled successfully!";
     
     return 0;
 }

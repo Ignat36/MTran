@@ -257,8 +257,8 @@ int PyAnalyzer::SyntaxAnalisis()
 
             if (i > 0 && Tokens[i - 1].TokenType == ETokenType::Variable)
             {
-                FunctionsStack.push_back(current);
                 current = current->Children.back();
+                FunctionsStack.push_back(current);
             }
             else
             {
@@ -269,7 +269,6 @@ int PyAnalyzer::SyntaxAnalisis()
                 current->Children.push_back(child);
                 current = current->Children.back();
                 FunctionsStack.push_back(current);
-                
             }
         }
         else if (Tokens[i].ValueName == "]") {
@@ -282,6 +281,9 @@ int PyAnalyzer::SyntaxAnalisis()
             }
 
             current = FunctionsStack.back();
+            FunctionsStack.pop_back();
+            if (current->Token.TokenType == ETokenType::Variable)
+                current = current->Parent.lock();
         }
         else if (Tokens[i].ValueName == ",") {
 
@@ -892,17 +894,41 @@ int PyAnalyzer::checkBrackets()
                     Errors.push_back(Error("Incorrect bracket sequence : bracket wath never opend : at | " + std::to_string(i.RowIndex) + ":" + std::to_string(i.ColumnIndex)));
                     return 1;
                 }
-                else if (i.ValueName == "}" && stack.back().ValueName == "{")
+                else if (i.ValueName == "}")
                 {
-                    stack.pop_back();
+                    if (stack.back().ValueName == "{")
+                    {
+                        stack.pop_back();
+                    }
+                    else
+                    {
+                        Errors.push_back(Error("Incorrect bracket sequence : at | " + std::to_string(i.RowIndex) + ":" + std::to_string(i.ColumnIndex)));
+                        return 1;
+                    }
                 }
-                else if (i.ValueName == ")" && stack.back().ValueName == "(")
+                else if (i.ValueName == ")")
                 {
-                    stack.pop_back();
+                    if (stack.back().ValueName == "(")
+                    {
+                        stack.pop_back();
+                    }
+                    else
+                    {
+                        Errors.push_back(Error("Incorrect bracket sequence : at | " + std::to_string(i.RowIndex) + ":" + std::to_string(i.ColumnIndex)));
+                        return 1;
+                    }
                 }
-                else if (i.ValueName == "]" && stack.back().ValueName == "[")
+                else if (i.ValueName == "]")
                 {
-                    stack.pop_back();
+                    if (stack.back().ValueName == "[")
+                    {
+                        stack.pop_back();
+                    }
+                    else
+                    {
+                        Errors.push_back(Error("Incorrect bracket sequence : at | " + std::to_string(i.RowIndex) + ":" + std::to_string(i.ColumnIndex)));
+                        return 1;
+                    }
                 }
                 else
                 {
@@ -911,6 +937,12 @@ int PyAnalyzer::checkBrackets()
                 }
             }
         }
+    }
+
+    if (!stack.empty())
+    {
+        Errors.push_back(Error("Incorrect bracket sequence : brackets are not closed : at | " + std::to_string(stack.back().RowIndex) + ":" + std::to_string(stack.back().ColumnIndex)));
+        return 1;
     }
 
     return 0;
@@ -943,20 +975,33 @@ int PyAnalyzer::checkSyntaxTree(std::shared_ptr<SyntaxNode> Node, std::shared_pt
     else if (Node->Token.TokenType == ETokenType::Variable)
     {
         if (Node->Children.size() == 0) {}
-        else if (Node->Children.size() == 1)
+        else if (Node->Children.size())
         {
-            if (Node->Children.back()->Token.TokenType == ETokenType::Literal
-                || Node->Children.back()->Token.TokenType == ETokenType::KeyWord
-                )
+            for (auto n : Node->Children)
+                if (n->Token.TokenType == ETokenType::Literal
+                    || n->Token.TokenType == ETokenType::KeyWord
+                    )
+                {
+                    Errors.push_back(Error("Expected numeric expression " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                    return 1;
+                }
+
+            std::vector<std::shared_ptr<SyntaxNode>> childs;
+            for (int i = 1; i < Node->Children.size(); i += 2)
             {
-                Errors.push_back(Error("Expected numeric expression " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
-                return 1;
+                if (Node->Children[i]->Token.ValueName != ",")
+                {
+                    Errors.push_back(Error("Statements in array indexators must be seperated with commas : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                    return 1;
+                }
             }
-        }
-        else
-        {
-            Errors.push_back(Error("Unexpected syntax nodes after " + Node->Token.ValueName + " : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
-            return 1;
+
+            for (int i = 0; i < Node->Children.size(); i += 2)
+            {
+                childs.push_back(Node->Children[i]);
+            }
+
+            Node->Children = childs;
         }
     }
     else if (Node->Token.TokenType == ETokenType::KeyWord)
@@ -1250,6 +1295,8 @@ int PyAnalyzer::SemanticCheck(std::shared_ptr<SyntaxNode> Node, std::shared_ptr<
             if (!Node->Parent.lock() 
                 || !Node->Parent.lock()->Parent.lock()
                 || Node->Parent.lock()->Token.ValueName != "in"
+                || Node->Children.size() < 1
+                || Node->Children.size() > 2
                 || Node->Parent.lock()->Parent.lock()->Token.ValueName != "for")
             {
                 Errors.push_back(Error("Incorrect use of function 'range' : at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
@@ -1905,29 +1952,42 @@ PyAnalyzer::FVariable PyAnalyzer::ExecExpr(std::shared_ptr<SyntaxNode> Node)
     {
         if (Node->Children.size())
         {
-            auto index = ExecExpr(Node->Children[0]);
+            FVariable result = Vars[Node->Token.ValueName];  
 
-            if (index.Type == "")
+            for (auto i : Node->Children)
             {
-                if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
-                    Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex);
-                return FVariable();
-            }
+                if (result.Type != "array")
+                {
+                    Errors.push_back(Error("Can't execute operator [] on " + result.Type + "  at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                    return FVariable();
+                }
 
-            if (index.Type != "int")
-            {
-                Errors.push_back(Error("Incorrect index type, expected 'int', but found : " + index.Type + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
-                return FVariable();
-            }
+                auto index = ExecExpr(i);
 
-            std::vector<FVariable> Varr = *reinterpret_cast<std::vector<FVariable>*>(Vars[Node->Token.ValueName].Value);
-            int id = *reinterpret_cast<int*>(index.Value);
-            if (id >= Varr.size() || id < 0)
-            {
-                Errors.push_back(Error("Index out of bounds at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
-                return FVariable();
+                if (index.Type == "")
+                {
+                    if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
+                        Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex);
+                    return FVariable();
+                }
+
+                if (index.Type != "int")
+                {
+                    Errors.push_back(Error("Incorrect index type, expected 'int', but found : " + index.Type + " at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                    return FVariable();
+                }
+
+                std::vector<FVariable> Varr = *reinterpret_cast<std::vector<FVariable>*>(result.Value);
+                int id = *reinterpret_cast<int*>(index.Value);
+                if (id >= Varr.size() || id < 0)
+                {
+                    Errors.push_back(Error("Index out of bounds at | " + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex)));
+                    return FVariable();
+                }
+                result = Varr[id];
             }
-            return Varr[id];
+            
+            return result;
         }
 
         return Vars[Node->Token.ValueName];
@@ -2391,7 +2451,12 @@ PyAnalyzer::FVariable PyAnalyzer::CallInt(std::shared_ptr<SyntaxNode> Node)
     else if (el.Type == "string")
     {
         el =  GetNumFromString(*reinterpret_cast<std::string*>(el.Value));
-        if (el.Type == "") return FVariable();
+        if (el.Type == "")
+        {
+            if (Errors.size() && !(Errors.back().Message.back() >= '0' && Errors.back().Message.back() <= '9'))
+                Errors.back().Message = Errors.back().Message + std::string(" | at ") + std::to_string(Node->Token.RowIndex) + ":" + std::to_string(Node->Token.ColumnIndex);
+            return FVariable();
+        }
     }
     
     if (el.Type == "Complex")
